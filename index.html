@@ -194,6 +194,7 @@ select{width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:va
 
 footer{display:flex;flex-wrap:wrap;gap:4px 18px;font-size:12.5px;color:var(--muted)}
 footer p{margin:0}
+footer:not(:has(p:not(:empty))){display:none}
 footer a{color:inherit}
 
 .drop-overlay{position:fixed;inset:0;z-index:20;display:grid;place-items:center;padding:24px;background:var(--bg);background:color-mix(in srgb,var(--bg) 82%,transparent)}
@@ -331,9 +332,7 @@ footer a{color:inherit}
   </main>
 
   <footer>
-    <p>Runs entirely in your browser. Your audio is never uploaded.</p>
-    <p id="backupNote">The list and its audio are backed up in this browser, so they survive a crash, power cut or reload. Use Save list to take the list to another computer.</p>
-    <p><a href="https://github.com/Davidkatom/Interapp" target="_blank" rel="noopener">Interapp on GitHub</a></p>
+    <p id="backupNote"></p>
   </footer>
 </div>
 
@@ -625,7 +624,7 @@ function addAudio(items, notes) {
   if (!fresh.length) { changed(); return; }
   const prev = tracks;
   tracks = [...tracks, ...fresh];
-  selected = new Set(fresh.map(t => t.id));
+  selected = new Set();
   anchorId = cursorId = fresh[0].id;
   persistDiff(prev, tracks);
   askPersist();
