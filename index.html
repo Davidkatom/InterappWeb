@@ -1371,8 +1371,21 @@ function renderMissing() {
     el.missingText.textContent = `${k} ${plural(k, 'track has', 'tracks have')} no audio file on this computer yet. `
       + `Drop or add the folder that holds ${them}; a parent folder works too. Files are matched by name and folder, and anything not in the list is left out.`;
   }
+  const long = missing.map(shownPath).filter(tooLong);
+  if (long.length) el.missingText.textContent += ' ' + longPathNote(long);
   el.missingAddBtn.dataset.mode = mode;
   el.missingAddBtn.textContent = { allow: 'Allow access', choose: 'Choose folder…', add: 'Add folder' }[mode];
+}
+// Chrome and Edge can't open a file whose full Windows path is 260 characters or more, even with
+// long paths enabled in Windows, and report it as not found. A junction gives the same folder a
+// short path; the page then reads the files through it and still saves their real full paths.
+const tooLong = p => /^[A-Za-z]:[\\/]/.test(p) && p.length >= 260;
+function longPathNote(paths) {
+  const k = paths.length, dir = commonDir(paths);
+  const name = dir ? baseName(dir) : 'Music';
+  return `${k} ${plural(k, 'path is', 'paths are')} 260 or more characters long, which this browser can't open. `
+    + `Give ${plural(k, 'its', 'their')} folder a short path: in Command Prompt run  mkdir C:\\s & mklink /J "C:\\s\\${name}" "${dir || 'C:\\…\\' + name}"  `
+    + `then choose C:\\s\\${name} here (keep its name). The list still saves the real full paths.`;
 }
 
 function roleOf(i, n) { return i === 0 ? 'start' : i === n - 1 ? 'end' : 'mix'; }
