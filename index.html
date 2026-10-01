@@ -632,14 +632,12 @@ function commonDir(paths) {
   }
   return n > 1 ? abs[0].slice(0, segEnds(abs[0])[n - 1].end) : '';
 }
-function rootFor(p) {
-  if (!isAbs(p)) return null;
+// The linked folders that hold a path, outermost first.
+function rootsFor(p) {
+  if (!isAbs(p)) return [];
   const parts = pathParts(p);
-  let best = null;
-  for (const r of roots) {
-    if (r.parts.length < parts.length && r.parts.every((s, i) => s === parts[i]) && (!best || r.parts.length > best.parts.length)) best = r;
-  }
-  return best;
+  return roots.filter(r => r.parts.length < parts.length && r.parts.every((s, i) => s === parts[i]))
+    .sort((a, b) => a.parts.length - b.parts.length);
 }
 async function permission(handle, ask) {
   try {
@@ -721,13 +719,15 @@ async function childOf(dir, name, kind, cache, key) {
 // A folder's handle carries only its name. To learn where the folder is, look for that name in
 // a list's full paths and check that the files below it are really there.
 async function inferRoot(dir, paths) {
-  const want = normPart(dir.name), cands = new Map();
+  // A drive's root is named like "D:\" (or just "\").
+  const want = normPart(dir.name.replace(/[\\/]+$/, '')), cands = new Map();
   for (const p of paths) {
     if (!isAbs(p)) continue;
     const segs = segEnds(p);
     for (let i = 0; i < segs.length - 1; i++) {
-      if (normPart(segs[i].name) !== want) continue;
-      const base = p.slice(0, segs[i].end), parts = pathParts(base);
+      const drive = i === 0 && /^[A-Za-z]:$/.test(segs[0].name);
+      if (normPart(segs[i].name) !== want && !(drive && !want)) continue;
+      const base = p.slice(0, segs[i].end + (drive ? 1 : 0)), parts = pathParts(base);
       if (!cands.has(parts.join('/'))) cands.set(parts.join('/'), { base, parts, hits: 0 });
     }
   }
@@ -779,26 +779,30 @@ async function resolveTracks() {
   return fixed.length;
 }
 
-// Loads tracks that have no audio yet from the linked folders their paths are in.
+// Loads tracks that have no audio yet from the linked folders their paths are in. Folders that can
+// be read now are tried first. With ask, the others are then asked for again, outermost first, so
+// that one permission covers as many tracks as it can.
 async function fillFromRoots(list, ask) {
   await rootsReady;
-  const groups = new Map();
-  for (const t of list) {
-    const r = t.file ? null : rootFor(shownPath(t));
-    if (r) groups.has(r) ? groups.get(r).push(t) : groups.set(r, [t]);
-  }
-  const filled = [];
-  for (const [r, ts] of groups) {
-    if (r.state !== 'granted') r.state = await permission(r.handle, ask);
-    if (r.state !== 'granted') continue;
-    const cache = new Map();
-    for (const t of ts) {
+  const want = list.filter(t => !t.file && rootsFor(shownPath(t)).length);
+  if (!want.length) return [];
+  for (const r of roots) if (r.state !== 'granted') r.state = await permission(r.handle, false);
+  const filled = [], caches = new Map();
+  for (const asking of ask ? [false, true] : [false]) {
+    for (const t of want) {
+      if (t.file) continue;
       const p = shownPath(t);
-      const h = await fileAt(r.handle, splitPath(p).slice(r.parts.length), cache);
-      const f = h && await h.getFile().catch(() => null);
-      if (!f) continue;
-      Object.assign(t, { file: f, name: f.name, path: p, listPath: p, size: f.size, lastModified: f.lastModified, duration: undefined, handle: h });
-      filled.push(t);
+      for (const r of rootsFor(p)) {
+        if (asking && r.state === 'prompt') r.state = await permission(r.handle, true);
+        if (r.state !== 'granted') continue;
+        if (!caches.has(r)) caches.set(r, new Map());
+        const h = await fileAt(r.handle, splitPath(p).slice(r.parts.length), caches.get(r));
+        const f = h && await h.getFile().catch(() => null);
+        if (!f) continue;
+        Object.assign(t, { file: f, name: f.name, path: p, listPath: p, size: f.size, lastModified: f.lastModified, duration: undefined, handle: h });
+        filled.push(t);
+        break;
+      }
     }
   }
   return filled;
@@ -813,8 +817,16 @@ async function loadFromRoots(ask) {
   render();
   return filled.length;
 }
-// Linked folders that hold missing tracks but need a click to be read again.
-const accessNeeded = () => roots.filter(r => r.state === 'prompt' && tracks.some(t => !t.file && rootFor(shownPath(t)) === r));
+// Linked folders that hold missing tracks but need a click to be read again: for each such track,
+// the outermost one, which fillFromRoots asks for first.
+function accessNeeded() {
+  const out = new Set();
+  for (const t of tracks) {
+    const r = t.file ? null : rootsFor(shownPath(t)).find(x => x.state === 'prompt');
+    if (r) out.add(r);
+  }
+  return [...out];
+}
 
 async function allowAccess() {
   const locked = accessNeeded();
@@ -822,12 +834,95 @@ async function allowAccess() {
   const still = tracks.filter(t => !t.file).length;
   if (n) showNotice(`Loaded ${n} ${plural(n, 'track', 'tracks')}${still ? `; ${still} still missing` : ''}.`);
   else if (locked.some(r => r.state === 'granted')) showNotice(`None of the missing tracks were found in ${locked.map(r => r.path).join(', ')}.`);
+  requestIfActive();
+}
+
+// ---------------------------------------------------------------- asking for a list's folder
+// A page can't ask for a folder by its path; all it can do is open the folder picker. So for the
+// missing tracks of a list it works out which folder to ask for, the highest one above them that
+// the browser lets a page read, and opens the picker as near to it as it can.
+const SHELL_DIRS = ['documents', 'desktop', 'downloads'];   // refused themselves, not what's in them
+const KNOWN_DIRS = ['desktop', 'documents', 'downloads', 'music', 'pictures', 'videos'];
+const SYSTEM_DIRS = ['windows', 'program files', 'program files (x86)', 'programdata'];
+const SYSTEM_TOPS = ['applications', 'bin', 'boot', 'dev', 'etc', 'lib', 'library', 'private', 'proc', 'sbin', 'sys', 'system', 'usr', 'var'];
+// Whether Chrome refuses to let a page read a folder, after its own list: the drive Windows is on,
+// the folders above the user's own, the user's own folder, AppData, Windows and Program Files, and
+// Documents, Desktop and Downloads themselves. OneDrive is counted as refused as well, since it can
+// hold Documents and Desktop. Whole drives and network shares are skipped too: they're far more
+// than a list needs, and Chrome refuses the system drive.
+function refused(p, parts) {
+  const n = parts.length;
+  if (/^\\\\/.test(p)) return n <= 2;                                     // \\server\share
+  if (/^[a-z]:$/.test(parts[0])) {
+    if (n === 1 || SYSTEM_DIRS.includes(parts[1])) return true;
+    if (parts[1] !== 'users') return n === 2 && SHELL_DIRS.includes(parts[1]);
+    if (n <= 3 || parts[3] === 'appdata') return true;                    // C:\Users, C:\Users\<name>
+    const cloud = /^onedrive\b/.test(parts[3]);
+    return n === 4 ? cloud || SHELL_DIRS.includes(parts[3]) : n === 5 && cloud && SHELL_DIRS.includes(parts[4]);
+  }
+  if (parts[0] === 'users' || parts[0] === 'home') {                      // macOS, Linux
+    return n <= 2 || parts[2] === 'library' || parts[2].startsWith('.') || (n === 3 && SHELL_DIRS.includes(parts[2]));
+  }
+  if (parts[0] === 'volumes' || parts[0] === 'mnt') return n <= 2;
+  if (parts[0] === 'media') return n <= 3;
+  return SYSTEM_TOPS.includes(parts[0]);
+}
+// The highest folder above a path that the browser lets a page read.
+function topAllowed(p) {
+  if (!isAbs(p) || tooLong(p)) return null;   // those need a short path first (see longPathNote)
+  const segs = segEnds(p), parts = segs.map(s => normPart(s.name));
+  for (let n = 1; n < segs.length; n++) if (!refused(p, parts.slice(0, n))) return p.slice(0, segs[n - 1].end);
+  return null;
+}
+// Where the folder picker opens for a folder: in the well-known folder (Music, Documents...) that is
+// it or holds it, depth levels above it; or else in a linked folder inside it. (Not for OneDrive:
+// whether it holds the well-known folders depends on its settings.)
+function startFor(path) {
+  const parts = pathParts(path);
+  let i = -1;
+  if (/^[a-z]:$/.test(parts[0]) && parts[1] === 'users') i = 3;
+  else if (parts[0] === 'users' || parts[0] === 'home') i = 2;
+  if (i > 0 && KNOWN_DIRS.includes(parts[i])) return { startIn: parts[i], depth: parts.length - 1 - i };
+  const inner = roots.filter(r => r.parts.length > parts.length && parts.every((s, j) => s === r.parts[j]))
+    .sort((a, b) => a.parts.length - b.parts.length)[0];
+  return inner ? { startIn: inner.handle, depth: parts.length - inner.parts.length } : null;
+}
+// The folders to ask for, each with the missing tracks it holds. Tracks in linked folders aren't
+// included: those only need permission again, or aren't where the list says.
+function folderTargets() {
+  const groups = new Map();
+  for (const t of tracks) {
+    const p = t.file ? '' : shownPath(t);
+    const top = p && !rootsFor(p).some(r => r.state !== 'denied') ? topAllowed(p) : null;
+    if (!top) continue;
+    const key = pathParts(top).join('/');
+    if (!groups.has(key)) groups.set(key, { path: top, name: baseName(top), tracks: [] });
+    groups.get(key).tracks.push(t);
+  }
+  return [...groups.values()];
+}
+async function requestFolder(target) {
+  const s = startFor(target.path);
+  const dir = await pick('showDirectoryPicker', s ? { startIn: s.startIn } : {});
+  if (dir === undefined) { el.folderInput.click(); return; }
+  if (dir) await linkForMissing(dir);
+}
+// While a click is still in effect (Load list, Restore, Allow access), the picker opens by itself.
+// A drop doesn't count as one, so then the missing-tracks bar asks.
+function requestIfActive() {
+  if (!canLink() || !(navigator.userActivation && navigator.userActivation.isActive)) return;
+  const [first] = folderTargets();
+  if (first) requestFolder(first);
 }
 
 async function chooseFolderForMissing() {
   const dir = await pick('showDirectoryPicker', {});
   if (dir === undefined) { el.folderInput.click(); return; }
-  if (!dir || building || tracks.every(t => t.file)) return;
+  if (dir) await linkForMissing(dir);
+}
+// Links a folder chosen for the missing tracks and loads them from it.
+async function linkForMissing(dir) {
+  if (building || tracks.every(t => t.file)) return;
   const path = await pathOfHandle(dir) || await inferRoot(dir, tracks.filter(t => !t.file).map(shownPath));
   if (path) {
     await addRoot(path, dir);
@@ -839,7 +934,8 @@ async function chooseFolderForMissing() {
     }
   }
   // The folder's name isn't in the missing paths (a list from another computer, or a renamed
-  // folder), so its files are matched by name and enclosing folders instead.
+  // folder), so its files are matched by name and enclosing folders instead; not a whole drive's.
+  if (/^([A-Za-z]:)?[\\/]*$/.test(dir.name)) { showNotice("None of the missing tracks were found there. Choose the folder that holds them rather than a whole drive."); return; }
   const out = [];
   try { await walkHandle(dir, '', false, null, out); } catch { showNotice(`Couldn't read the folder “${dir.name}”.`); return; }
   handleIncoming(out);
@@ -1065,6 +1161,7 @@ async function importList(file, audio, notes) {
   render();
   showNotice(notes.join(' '), prev.length ? { label: 'Undo', fn: () => replaceTracks(prev) } : null);
   el.list.scrollTop = 0;
+  requestIfActive();
 }
 
 function replaceTracks(list) {
@@ -1154,17 +1251,23 @@ async function walkHandle(h, prefix, inFolder, top, out) {
 }
 
 const PICK_TYPES = [{ description: 'Audio files and lists', accept: { 'audio/*': [...AUDIO_EXT].map(x => '.' + x), 'text/plain': ['.txt'] } }];
-// Resolves to what was picked, null if the picker was closed, or undefined where pickers can't be
-// used (a sandboxed frame), so the caller falls back to a file input.
+// Resolves to what was picked, null if the picker was closed (or can't open without a click), or
+// undefined where pickers can't be used (a sandboxed frame), so the caller falls back to a file
+// input. Without a startIn the picker opens where it was last used.
 async function pick(fn, opts) {
   if (!canLink() || typeof window[fn] !== 'function') return undefined;
-  try { return await window[fn]({ id: 'interapp-audio', startIn: 'music', ...opts }); }
-  catch (e) {
-    if (e && e.name === 'AbortError') return null;
-    fsaBlocked = true;
-    render();
-    return undefined;
+  // A starting folder that has gone away makes the picker fail, so it's tried again without one.
+  for (const o of opts.startIn ? [opts, { ...opts, startIn: undefined }] : [opts]) {
+    try { return await window[fn]({ id: 'interapp-audio', ...o }); }
+    catch (e) {
+      const name = e && e.name;
+      if (name === 'AbortError') return null;
+      if ((name === 'SecurityError' || name === 'NotAllowedError') && window.top === window.self) return null;
+    }
   }
+  fsaBlocked = true;
+  render();
+  return undefined;
 }
 async function addFiles() {
   const picked = await pick('showOpenFilePicker', { multiple: true, types: PICK_TYPES });
@@ -1353,15 +1456,27 @@ function renderMissing() {
   el.missingBar.hidden = !k || building;
   if (!k) return;
   const locked = accessNeeded();
+  const targets = locked.length || !canLink() ? [] : folderTargets();
   const them = plural(k, 'it', 'them');
   let mode = 'add';
   if (locked.length) {
     mode = 'allow';
     const where = locked.map(r => `“${baseName(r.path)}”`).join(', ');
-    const n = missing.filter(t => locked.includes(rootFor(shownPath(t)))).length;
+    const n = missing.filter(t => rootsFor(shownPath(t)).some(r => locked.includes(r))).length;
     el.missingText.textContent = `${k} ${plural(k, "track isn't", "tracks aren't")} loaded yet. ` + (n === k
       ? `Allow this page to read ${where} again to load ${them}.`
       : `${n} of them ${plural(n, 'is', 'are')} in ${where}; allow this page to read ${plural(locked.length, 'that folder', 'those folders')} again to load ${plural(n, 'it', 'them')}.`);
+  } else if (targets.length) {
+    mode = 'request';
+    const g = targets[0], n = g.tracks.length, s = startFor(g.path);
+    const where = commonDir(g.tracks.map(shownPath)) || g.path;
+    const folder = pathParts(where).join('/') === pathParts(g.path).join('/') ? 'that folder' : g.path;
+    const known = s && typeof s.startIn === 'string' ? s.startIn[0].toUpperCase() + s.startIn.slice(1) : '';
+    el.missingText.textContent = `${k} ${plural(k, "track isn't", "tracks aren't")} loaded yet. `
+      + `${n === k ? plural(k, "It's", "They're") : `${n} of them ${plural(n, 'is', 'are')}`} in ${where}. `
+      + (known && !s.depth ? `To let this page read ${plural(n, 'it', 'them')}, allow ${folder}: the folder picker opens right in it, so just press Select Folder.`
+        : `To let this page read ${plural(n, 'it', 'them')}, choose ${folder} in the folder picker${known ? `, which opens in your ${known} folder` : ''}.`)
+      + (targets.length > 1 ? ` After that, ${targets.length - 1} more ${plural(targets.length - 1, 'folder', 'folders')}.` : '');
   } else if (canLink()) {
     mode = 'choose';
     const dir = commonDir(missing.map(shownPath));
@@ -1374,7 +1489,8 @@ function renderMissing() {
   const long = missing.map(shownPath).filter(tooLong);
   if (long.length) el.missingText.textContent += ' ' + longPathNote(long);
   el.missingAddBtn.dataset.mode = mode;
-  el.missingAddBtn.textContent = { allow: 'Allow access', choose: 'Choose folder…', add: 'Add folder' }[mode];
+  el.missingAddBtn.textContent = mode === 'request' ? `Choose “${targets[0].name}”…`
+    : { allow: 'Allow access', choose: 'Choose folder…', add: 'Add folder' }[mode];
 }
 // Chrome and Edge can't open a file whose full Windows path is 260 characters or more, even with
 // long paths enabled in Windows, and report it as not found. A junction gives the same folder a
@@ -1691,6 +1807,7 @@ el.addFolderBtn.onclick = addFolder;
 el.missingAddBtn.onclick = () => {
   const mode = el.missingAddBtn.dataset.mode;
   if (mode === 'allow') allowAccess();
+  else if (mode === 'request') { const [first] = folderTargets(); first ? requestFolder(first) : chooseFolderForMissing(); }
   else if (mode === 'choose') chooseFolderForMissing();
   else addFolder();
 };
@@ -1765,7 +1882,7 @@ el.restoreBtn.onclick = () => {
   tracks.forEach(t => { if (t.file) queueProbe(t); });
   render();
   // Audio that didn't fit in the backup is read again from the linked folders.
-  if (tracks.some(t => !t.file)) loadFromRoots(true);
+  if (tracks.some(t => !t.file)) loadFromRoots(true).then(requestIfActive);
 };
 el.discardBtn.onclick = dropPendingRestore;
 
@@ -2181,7 +2298,7 @@ try {
     pendingRestore = recs;
     const total = recs.reduce((a, r) => a + (r.file ? r.size || 0 : 0), 0);
     // Audio missing from the backup can still come from a linked folder.
-    const noAudio = recs.filter(r => !r.file && !rootFor(r.listPath || r.path)).length;
+    const noAudio = recs.filter(r => !r.file && !rootsFor(r.listPath || r.path).length).length;
     el.restoreText.textContent = `Your last list (${recs.length} ${plural(recs.length, 'track', 'tracks')}${total ? ', ' + fmtSize(total) : ''}) is saved in this browser`
       + (noAudio ? `; ${noAudio} of them will need their folder added again` : '') + '. Restore it? Adding new files discards it.';
     el.restoreBar.hidden = false;
