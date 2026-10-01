@@ -1,0 +1,1690 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Interapp Audio Merger</title>
+<meta name="description" content="Merge audio files in the browser: the first track plays, every middle track plays at the same time, then the last track plays.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Schibsted+Grotesk:wght@700;800&display=swap">
+<style>
+/* Layout: the output arrangement drawn to scale across the top, then the track list beside a narrow build panel; one column on phones. */
+:root{
+  --bg:#EDF0F3;
+  --surface:#FFFFFF;
+  --sunken:#E3E8ED;
+  --ink:#131A23;
+  --muted:#5A6676;
+  --line:#D2D9E1;
+  --accent:#2E41C4;
+  --accent-ink:#FFFFFF;
+  --accent-soft:#E2E6FA;
+  --start:#0A7A6E;
+  --start-soft:#D7EFEA;
+  --end:#A35705;
+  --end-soft:#F7E8D5;
+  --on-role:#FFFFFF;
+  --danger:#B42318;
+  --danger-soft:#FCE6E3;
+  --shadow:0 1px 2px rgba(19,26,35,.06),0 6px 20px rgba(19,26,35,.05);
+  --font-display:"Schibsted Grotesk","IBM Plex Sans",system-ui,sans-serif;
+  --font-body:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --font-mono:"IBM Plex Mono",ui-monospace,"Cascadia Mono",Consolas,monospace;
+  --radius:12px;
+  --radius-sm:8px;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#0D1116;--surface:#151A21;--sunken:#0A0D11;--ink:#E4E9EF;--muted:#8F9BAA;--line:#27303A;
+    --accent:#8F9DFF;--accent-ink:#0D1116;--accent-soft:#1D2346;
+    --start:#3FC3B2;--start-soft:#112D29;--end:#F2A54A;--end-soft:#33240F;--on-role:#0D1116;
+    --danger:#FF8C7C;--danger-soft:#3A1713;--shadow:0 1px 2px rgba(0,0,0,.45);
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0D1116;--surface:#151A21;--sunken:#0A0D11;--ink:#E4E9EF;--muted:#8F9BAA;--line:#27303A;
+  --accent:#8F9DFF;--accent-ink:#0D1116;--accent-soft:#1D2346;
+  --start:#3FC3B2;--start-soft:#112D29;--end:#F2A54A;--end-soft:#33240F;--on-role:#0D1116;
+  --danger:#FF8C7C;--danger-soft:#3A1713;--shadow:0 1px 2px rgba(0,0,0,.45);
+  color-scheme:dark;
+}
+
+*,*::before,*::after{box-sizing:border-box}
+[hidden]{display:none!important}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 var(--font-body)}
+button,input,select{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+.app{max-width:1180px;margin:0 auto;padding-inline:clamp(16px,3vw,32px);padding-block:28px 40px;display:grid;gap:20px}
+
+/* ---------- header + arrangement ---------- */
+.top{display:grid;gap:16px}
+.brand{display:grid;gap:6px}
+h1{margin:0;font:800 clamp(30px,4.2vw,42px)/1 var(--font-display);letter-spacing:-.025em;text-wrap:balance}
+.lede{margin:0;max-width:66ch;color:var(--muted)}
+.lede b{font-weight:600}
+.t-start{color:var(--start)}
+.t-mix{color:var(--accent)}
+.t-end{color:var(--end)}
+
+.arrangement{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:14px;display:grid;gap:12px}
+.lane{display:flex;gap:4px;height:88px}
+.seg{position:relative;min-width:44px;border-radius:6px;overflow:hidden;display:flex;transition:flex-grow .35s ease}
+.seg-start{background:var(--start);color:var(--on-role)}
+.seg-end{background:var(--end);color:var(--on-role)}
+.seg-mix{background:var(--accent-soft);padding:6px 0}
+.seg-label{align-self:flex-end;padding:6px 8px;font:600 12px/1 var(--font-body);letter-spacing:.04em;text-transform:uppercase;white-space:nowrap}
+.layers{flex:1;display:flex;flex-direction:column;gap:2px;min-width:0}
+.layers.dense{gap:0}
+.layer{flex:1 1 0;min-height:0;background:var(--accent);border-radius:0 2px 2px 0;opacity:.88}
+.layers.dense .layer{border-radius:0}
+.layer.unknown{opacity:.35}
+.seg.narrow .seg-label{display:none}
+.lane.is-schematic .seg{opacity:.45}
+.lane.is-schematic .seg-start,.lane.is-schematic .seg-end{background:transparent;color:var(--ink);border:1.5px dashed var(--line)}
+.lane.is-schematic .seg-start{border-color:var(--start)}
+.lane.is-schematic .seg-end{border-color:var(--end)}
+.legend{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 22px;font-size:13px}
+.lg{display:inline-flex;align-items:baseline;gap:7px;min-width:0}
+.lg .key{width:10px;height:10px;border-radius:2px;align-self:center;flex:none}
+.key-start{background:var(--start)}
+.key-mix{background:var(--accent)}
+.key-end{background:var(--end)}
+.lg .lbl{font-weight:600}
+.lg .val{font-family:var(--font-mono);font-variant-numeric:tabular-nums;color:var(--muted)}
+.lg.total{margin-left:auto}
+.lg.total .val{color:var(--ink);font-weight:500}
+.lg .note{color:var(--muted)}
+
+/* ---------- main area ---------- */
+.work{display:grid;gap:20px;grid-template-columns:minmax(0,1fr)}
+@media (min-width:920px){.work{grid-template-columns:minmax(0,1fr) 320px;align-items:start}}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);min-width:0}
+
+.toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:10px 14px;padding:12px;border-bottom:1px solid var(--line)}
+.group{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+.group.push{margin-left:auto}
+.count{font-size:13px;color:var(--muted);font-variant-numeric:tabular-nums}
+
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:36px;padding:6px 12px;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--surface);font-size:14px;font-weight:500;cursor:pointer;white-space:nowrap}
+.btn:hover:not(:disabled){background:var(--sunken)}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.btn.icon{width:36px;padding:0}
+.btn.icon svg{width:16px;height:16px}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.btn.primary:hover:not(:disabled){background:var(--accent);filter:brightness(1.08)}
+.btn.ghost{border-color:transparent;background:transparent}
+.btn.ghost:hover:not(:disabled){background:var(--sunken)}
+.btn.danger{background:var(--danger);border-color:var(--danger);color:var(--surface)}
+.btn.danger:hover:not(:disabled){background:var(--danger);filter:brightness(1.08)}
+
+.bar-note{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;padding:10px 12px;border-bottom:1px solid var(--line);background:var(--sunken);font-size:14px}
+.bar-note p{margin:0;flex:1 1 240px;min-width:0}
+.bar-note.warn{background:var(--danger-soft)}
+.bar-note .actions{display:flex;gap:6px}
+
+.list{list-style:none;margin:0;padding:0;max-height:min(62vh,640px);overflow:auto;overscroll-behavior:contain}
+.list:focus{outline:none}
+.list:focus-visible{box-shadow:inset 0 0 0 2px var(--accent)}
+.row{display:grid;grid-template-columns:2.4em 4.9em minmax(0,1fr) auto auto auto auto;align-items:center;gap:10px;padding:6px 10px 6px 12px;border-bottom:1px solid var(--line);background:var(--surface);user-select:none;-webkit-user-select:none;cursor:default}
+.row:last-child{border-bottom:0}
+.row.is-selected{background:var(--accent-soft)}
+.list.kbd .row.is-cursor{box-shadow:inset 0 0 0 2px var(--accent)}
+.row.drop-before{box-shadow:inset 0 3px 0 var(--accent)}
+.row.drop-after{box-shadow:inset 0 -3px 0 var(--accent)}
+.row.has-error{background:var(--danger-soft)}
+.row.is-missing .fname{color:var(--muted);font-style:italic}
+.row.is-missing .dur{color:var(--danger);font-family:var(--font-body);font-size:12px;font-weight:600;letter-spacing:.04em;text-transform:uppercase}
+.row.is-missing .play{visibility:hidden}
+.row.is-dragging{opacity:.5}
+.idx{font:500 12px/1 var(--font-mono);color:var(--muted);text-align:right;font-variant-numeric:tabular-nums}
+.role{justify-self:start;padding:3px 7px;border-radius:999px;font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;line-height:1.2}
+.row.is-start .role{background:var(--start-soft);color:var(--start)}
+.row.is-mix .role{background:var(--accent-soft);color:var(--accent)}
+.row.is-selected.is-mix .role{background:var(--surface)}
+.row.is-end .role{background:var(--end-soft);color:var(--end)}
+.name{display:flex;flex-direction:column;min-width:0}
+.fname{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500}
+.fpath{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;color:var(--muted)}
+.dur,.size{font:13px/1 var(--font-mono);font-variant-numeric:tabular-nums;color:var(--muted);text-align:right}
+.dur{min-width:4.2em;color:var(--ink)}
+.size{min-width:5.2em}
+.mini{display:inline-grid;place-items:center;width:30px;height:30px;border:0;border-radius:6px;background:transparent;color:var(--muted);cursor:pointer;padding:0}
+.mini:hover{background:var(--sunken);color:var(--ink)}
+.mini svg{width:14px;height:14px}
+.row.is-playing .play{color:var(--accent)}
+.mini.del:hover{color:var(--danger)}
+.list.locked{pointer-events:none;opacity:.6}
+
+.empty{margin:14px;padding:clamp(24px,5vw,44px) 20px;border:2px dashed var(--line);border-radius:var(--radius);display:grid;justify-items:center;gap:10px;text-align:center}
+.empty h2{margin:0;font:700 20px/1.2 var(--font-display)}
+.empty p{margin:0;max-width:48ch;color:var(--muted)}
+.empty .group{justify-content:center;margin-top:4px}
+.hint{margin:0;padding:10px 12px;border-top:1px solid var(--line);font-size:12.5px;color:var(--muted)}
+kbd{font:500 11.5px/1 var(--font-mono);padding:2px 5px;border:1px solid var(--line);border-bottom-width:2px;border-radius:4px;background:var(--surface);color:var(--ink)}
+
+/* ---------- build panel ---------- */
+.mixdown{padding:16px;display:grid;gap:14px}
+@media (min-width:920px){.mixdown{position:sticky;top:calc(env(safe-area-inset-top,0px) + 16px)}}
+.mixdown h2{margin:0;font:700 18px/1.2 var(--font-display)}
+.field{display:grid;gap:5px}
+.field label{font-size:12px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:var(--muted)}
+.name-field{display:flex;align-items:stretch;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--surface);overflow:hidden}
+.name-field:focus-within{outline:2px solid var(--accent);outline-offset:1px}
+.name-field input{flex:1;min-width:0;border:0;background:transparent;padding:8px 10px}
+.name-field input:focus{outline:none}
+.name-field span{display:grid;place-items:center;padding:0 10px;background:var(--sunken);color:var(--muted);font:13px var(--font-mono)}
+select{width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--surface)}
+.summary{margin:0;display:grid;grid-template-columns:auto 1fr;gap:6px 12px;padding:12px;border-radius:var(--radius-sm);background:var(--sunken);font-size:13.5px}
+.summary dt{color:var(--muted)}
+.summary dd{margin:0;text-align:right;font-family:var(--font-mono);font-variant-numeric:tabular-nums}
+.build{min-height:46px;font-size:16px;font-weight:600}
+.build.is-cancel{background:var(--surface);color:var(--ink);border-color:var(--line)}
+.progress{height:6px;border-radius:999px;background:var(--sunken);overflow:hidden}
+.progress .fill{height:100%;width:0;background:var(--accent);border-radius:999px;transition:width .2s linear}
+.status{margin:0;min-height:1.5em;font-size:13.5px;color:var(--muted);overflow-wrap:anywhere}
+.error{margin:0;padding:10px 12px;border-radius:var(--radius-sm);background:var(--danger-soft);color:var(--danger);font-size:14px;overflow-wrap:anywhere}
+.result{display:grid;gap:10px;padding-top:14px;border-top:1px solid var(--line)}
+.result audio{width:100%}
+.result .meta{margin:0;font:13px var(--font-mono);color:var(--muted);overflow-wrap:anywhere}
+.result .dl-note{margin:0;font-size:12.5px;color:var(--muted)}
+
+footer{display:flex;flex-wrap:wrap;gap:4px 18px;font-size:12.5px;color:var(--muted)}
+footer p{margin:0}
+footer a{color:inherit}
+
+.drop-overlay{position:fixed;inset:0;z-index:20;display:grid;place-items:center;padding:24px;background:var(--bg);background:color-mix(in srgb,var(--bg) 82%,transparent)}
+.drop-overlay div{padding:28px 36px;border:2px dashed var(--accent);border-radius:var(--radius);background:var(--surface);font:700 20px/1.3 var(--font-display);color:var(--accent);text-align:center;pointer-events:none}
+
+@media (max-width:560px){
+  .row{grid-template-columns:1.8em 4.4em minmax(0,1fr) auto auto auto;gap:6px;padding-left:8px}
+  .size{display:none}
+  .lg.total{margin-left:0}
+}
+@media (prefers-reduced-motion:reduce){
+  .seg,.progress .fill{transition:none}
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="top">
+    <div class="brand">
+      <h1>Interapp</h1>
+      <p class="lede">Joins audio files into one: the <b class="t-start">first</b> track plays alone, every <b class="t-mix">middle</b> track plays at the same time, then the <b class="t-end">last</b> track plays alone.</p>
+    </div>
+    <section class="arrangement" aria-label="Arrangement of the output file">
+      <div class="lane" id="lane" aria-hidden="true">
+        <div class="seg seg-start" id="segStart"><span class="seg-label">Start</span></div>
+        <div class="seg seg-mix" id="segMix"><div class="layers" id="layers"></div></div>
+        <div class="seg seg-end" id="segEnd"><span class="seg-label">End</span></div>
+      </div>
+      <div class="legend" id="legend"></div>
+    </section>
+  </header>
+
+  <main class="work">
+    <section class="panel tracks" id="tracksPanel" aria-label="Tracks">
+      <div class="toolbar">
+        <div class="group">
+          <button type="button" class="btn primary" id="addFilesBtn">Add files</button>
+          <button type="button" class="btn" id="addFolderBtn">Add folder</button>
+          <button type="button" class="btn" id="loadListBtn" title="Open a backup list (.txt), then add the folder that holds its audio">Load list</button>
+          <input type="file" id="fileInput" multiple accept=".mp3,.wav,.ogg,.flac,.m4a,.aac,.txt,audio/*,text/plain" hidden>
+          <input type="file" id="folderInput" multiple webkitdirectory hidden>
+          <input type="file" id="listInput" accept=".txt,text/plain" hidden>
+        </div>
+        <div class="group" role="group" aria-label="Move selected tracks">
+          <button type="button" class="btn icon" id="topBtn" title="Move to top (makes it the start track)" aria-label="Move to top">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 2.5h10M8 14V6M4.5 9.5 8 6l3.5 3.5"/></svg>
+          </button>
+          <button type="button" class="btn icon" id="upBtn" title="Move up (Alt+↑)" aria-label="Move up">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M8 13.5V3M4 7l4-4 4 4"/></svg>
+          </button>
+          <button type="button" class="btn icon" id="downBtn" title="Move down (Alt+↓)" aria-label="Move down">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2.5V13M4 9l4 4 4-4"/></svg>
+          </button>
+          <button type="button" class="btn icon" id="bottomBtn" title="Move to bottom (makes it the end track)" aria-label="Move to bottom">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 13.5h10M8 2v8M4.5 6.5 8 10l3.5-3.5"/></svg>
+          </button>
+          <button type="button" class="btn" id="removeBtn">Remove</button>
+        </div>
+        <div class="group push">
+          <span class="count" id="countLabel" aria-live="polite">0 tracks</span>
+          <button type="button" class="btn" id="saveListBtn" title="Download the list as backup.txt, one path per line">Save list</button>
+          <button type="button" class="btn ghost" id="clearBtn">Clear</button>
+        </div>
+      </div>
+
+      <div class="bar-note" id="restoreBar" hidden>
+        <p id="restoreText">Your last list is saved in this browser.</p>
+        <div class="actions">
+          <button type="button" class="btn primary" id="restoreBtn">Restore</button>
+          <button type="button" class="btn" id="discardBtn">Discard</button>
+        </div>
+      </div>
+      <div class="bar-note warn" id="clearBar" hidden>
+        <p id="clearText">Remove every track from the list?</p>
+        <div class="actions">
+          <button type="button" class="btn danger" id="clearYes">Clear list</button>
+          <button type="button" class="btn" id="clearNo">Cancel</button>
+        </div>
+      </div>
+      <div class="bar-note warn" id="missingBar" hidden>
+        <p id="missingText"></p>
+        <div class="actions">
+          <button type="button" class="btn primary" id="missingAddBtn">Add folder</button>
+          <button type="button" class="btn" id="missingRemoveBtn">Remove missing</button>
+        </div>
+      </div>
+      <div class="bar-note" id="notice" hidden><p id="noticeText"></p><div class="actions"><button type="button" class="btn primary" id="noticeAction" hidden></button><button type="button" class="btn ghost" id="noticeClose">OK</button></div></div>
+
+      <ol class="list" id="list" tabindex="0" role="listbox" aria-multiselectable="true" aria-label="Tracks in build order" hidden></ol>
+
+      <div class="empty" id="empty">
+        <h2>Drop audio files here</h2>
+        <p>MP3, WAV, OGG, FLAC, M4A or AAC. Drop a whole folder to add everything in it, sorted by name. To reopen a saved list, drop its .txt together with the folder that holds the audio.</p>
+        <div class="group">
+          <button type="button" class="btn primary" id="emptyAddBtn">Choose files</button>
+          <button type="button" class="btn" id="sampleBtn">Try with sample tones</button>
+        </div>
+      </div>
+
+      <p class="hint">Click to select. <kbd>Ctrl</kbd>/<kbd>⌘</kbd> or <kbd>Shift</kbd>-click selects several. Drag rows to reorder. <kbd>Alt</kbd>+<kbd>↑</kbd>/<kbd>↓</kbd> moves the selection, <kbd>Delete</kbd> removes it, <kbd>Space</kbd> previews.</p>
+    </section>
+
+    <aside class="panel mixdown" aria-label="Build">
+      <h2>Build</h2>
+      <div class="field">
+        <label for="outName">File name</label>
+        <div class="name-field"><input id="outName" type="text" value="combined" spellcheck="false" autocomplete="off"><span id="extLabel">.mp3</span></div>
+      </div>
+      <div class="field">
+        <label for="format">Format</label>
+        <select id="format">
+          <option value="mp3-64" selected>MP3 · 64 kbps (desktop app setting)</option>
+          <option value="mp3-128">MP3 · 128 kbps</option>
+          <option value="mp3-192">MP3 · 192 kbps</option>
+          <option value="wav">WAV · 16-bit, uncompressed</option>
+        </select>
+      </div>
+      <dl class="summary">
+        <dt>Output length</dt><dd id="sumLength">—</dd>
+        <dt>Tracks</dt><dd id="sumTracks">0 of 3 needed</dd>
+        <dt>Estimated size</dt><dd id="sumSize">—</dd>
+      </dl>
+      <button type="button" class="btn primary build" id="buildBtn" disabled>Build</button>
+      <div class="progress" id="progress" role="progressbar" aria-label="Build progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div class="fill" id="bar"></div></div>
+      <p class="status" id="status" aria-live="polite">Add at least 3 tracks to build.</p>
+      <p class="error" id="error" role="alert" hidden></p>
+      <div class="result" id="result" hidden>
+        <audio id="resultAudio" controls preload="metadata"></audio>
+        <p class="meta" id="resultMeta"></p>
+        <button type="button" class="btn primary" id="downloadBtn">Download</button>
+        <button type="button" class="btn" id="listBtn">Download track list (.txt)</button>
+        <p class="dl-note" id="dlNote" hidden></p>
+      </div>
+    </aside>
+  </main>
+
+  <footer>
+    <p>Runs entirely in your browser. Your audio is never uploaded.</p>
+    <p id="backupNote">The list and its audio are backed up in this browser, so they survive a crash, power cut or reload. Use Save list to take the list to another computer.</p>
+    <p><a href="https://github.com/Davidkatom/Interapp" target="_blank" rel="noopener">Interapp on GitHub</a></p>
+  </footer>
+</div>
+
+<div class="drop-overlay" id="dropOverlay" hidden><div>Drop audio files or folders to add them</div></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/lamejs/1.2.1/lame.min.js"></script>
+<script>
+(() => {
+'use strict';
+
+// ---------------------------------------------------------------- constants
+const AUDIO_EXT = new Set(['mp3', 'wav', 'ogg', 'flac', 'm4a', 'aac']);
+// 64 kbps stereo MP3 is encoded at 24 kHz (LAME picks that rate for this bitrate anyway);
+// decoding straight to it halves memory use and encode time.
+const FORMATS = {
+  'mp3-64':  { kind: 'mp3', kbps: 64,  rate: 24000, ext: '.mp3' },
+  'mp3-128': { kind: 'mp3', kbps: 128, rate: 44100, ext: '.mp3' },
+  'mp3-192': { kind: 'mp3', kbps: 192, rate: 44100, ext: '.mp3' },
+  'wav':     { kind: 'wav',            rate: 44100, ext: '.wav' },
+};
+const MIME = { '.mp3': 'audio/mpeg', '.wav': 'audio/wav' };
+const ICON_PLAY = '<svg viewBox="0 0 16 16" fill="currentColor"><path d="M4.5 2.8v10.4L13 8z"/></svg>';
+const ICON_STOP = '<svg viewBox="0 0 16 16" fill="currentColor"><rect x="3.5" y="3.5" width="9" height="9" rx="1"/></svg>';
+const ICON_DEL = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M4 4l8 8M12 4l-8 8"/></svg>';
+
+const $ = id => document.getElementById(id);
+const el = {};
+['lane','segStart','segMix','segEnd','layers','legend','tracksPanel','list','empty',
+ 'addFilesBtn','addFolderBtn','fileInput','folderInput','emptyAddBtn','sampleBtn',
+ 'topBtn','upBtn','downBtn','bottomBtn','removeBtn','clearBtn','countLabel',
+ 'restoreBar','restoreText','restoreBtn','discardBtn','clearBar','clearText','clearYes','clearNo',
+ 'notice','noticeText','noticeClose','noticeAction','missingBar','missingText','missingAddBtn','missingRemoveBtn',
+ 'loadListBtn','listInput','saveListBtn','outName','extLabel','format','sumLength','sumTracks','sumSize',
+ 'buildBtn','progress','bar','status','error','result','resultAudio','resultMeta','downloadBtn','listBtn','dlNote',
+ 'backupNote','dropOverlay'].forEach(id => { el[id] = $(id); });
+
+// ---------------------------------------------------------------- state
+let tracks = [];            // {id, file (null = missing), name, path, listPath, size, lastModified, duration}
+let selected = new Set();
+let anchorId = null;        // shift-click anchor
+let cursorId = null;        // keyboard cursor
+let errorId = null;
+let playingId = null;
+let building = false;
+let cancelRequested = false;
+let result = null;          // {blob, url, filename, listText, seconds}
+let pendingRestore = null;  // saved records waiting for Restore / Discard
+let dragIds = null;         // ids being reordered by drag
+let idSeq = 0;
+
+const newId = () => 't' + Date.now().toString(36) + (idSeq++).toString(36);
+const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
+const extOf = name => ((/\.([^./\\]+)$/.exec(name) || [])[1] || '').toLowerCase();
+const dur = t => (typeof t.duration === 'number' && isFinite(t.duration) && t.duration > 0) ? t.duration : null;
+const fmtName = () => (el.outName.value.trim().replace(/[\\/:*?"<>|]+/g, '_').replace(/\.(mp3|wav)$/i, '') || 'combined');
+const currentFormat = () => FORMATS[el.format.value] || FORMATS['mp3-64'];
+
+function fmtTime(sec) {
+  if (sec == null || !isFinite(sec)) return '–:––';
+  sec = Math.round(sec);
+  const h = Math.floor(sec / 3600), m = Math.floor(sec % 3600 / 60), s = sec % 60;
+  const ss = String(s).padStart(2, '0');
+  return h ? `${h}:${String(m).padStart(2, '0')}:${ss}` : `${m}:${ss}`;
+}
+function fmtSize(b) {
+  if (b < 1024) return b + ' B';
+  if (b < 1048576) return Math.round(b / 1024) + ' KB';
+  if (b < 1073741824) return (b / 1048576).toFixed(1) + ' MB';
+  return (b / 1073741824).toFixed(2) + ' GB';
+}
+function storageGet(k) { try { return localStorage.getItem(k); } catch { return null; } }
+function storageSet(k, v) { try { localStorage.setItem(k, v); } catch { /* per-viewer convenience only */ } }
+
+// ---------------------------------------------------------------- backup (IndexedDB)
+// The desktop app kept backup.txt with file paths. A browser can't reopen paths, so the
+// list and the audio itself are kept in IndexedDB on this device, written on every change.
+// The list metadata and the audio are stored separately: if there's no room for the audio,
+// the list still survives and its rows come back as "missing" until the folder is added again.
+const store = (() => {
+  let dbp = null;
+  function open() {
+    if (!dbp) dbp = new Promise((resolve, reject) => {
+      const req = indexedDB.open('interapp-audio-merger', 2);
+      req.onupgradeneeded = () => {
+        const db = req.result;
+        for (const name of [...db.objectStoreNames]) db.deleteObjectStore(name);
+        db.createObjectStore('tracks', { keyPath: 'id' });
+        db.createObjectStore('blobs');
+        db.createObjectStore('meta');
+      };
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+      req.onblocked = () => reject(new Error('blocked'));
+    });
+    return dbp;
+  }
+  async function tx(names, mode, fn) {
+    const db = await open();
+    return new Promise((resolve, reject) => {
+      // 'strict' flushes to disk before completing, so a power cut doesn't lose the last change.
+      const t = mode === 'readwrite' ? db.transaction(names, mode, { durability: 'strict' }) : db.transaction(names, mode);
+      let out;
+      t.oncomplete = () => resolve(out);
+      t.onerror = () => reject(t.error);
+      t.onabort = () => reject(t.error);
+      out = fn(t);
+    });
+  }
+  const req2p = r => new Promise((res, rej) => { r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); });
+  const meta = t => ({ id: t.id, name: t.name, path: t.path, listPath: t.listPath || '', size: t.size, lastModified: t.lastModified });
+  const api = {
+    putMeta: list => tx(['tracks'], 'readwrite', t => list.forEach(x => t.objectStore('tracks').put(meta(x)))),
+    async put(list) {
+      await api.putMeta(list);
+      const withFile = list.filter(x => x.file);
+      if (withFile.length) await tx(['blobs'], 'readwrite', t => withFile.forEach(x => t.objectStore('blobs').put(x.file, x.id))).catch(audioBackupFailed);
+    },
+    del: ids => tx(['tracks', 'blobs'], 'readwrite', t => ids.forEach(id => { t.objectStore('tracks').delete(id); t.objectStore('blobs').delete(id); })),
+    order: ids => tx(['meta'], 'readwrite', t => t.objectStore('meta').put(ids, 'order')),
+    clear: () => tx(['tracks', 'blobs', 'meta'], 'readwrite', t => ['tracks', 'blobs', 'meta'].forEach(n => t.objectStore(n).clear())),
+    async load() {
+      const db = await open();
+      const t = db.transaction(['tracks', 'blobs', 'meta'], 'readonly');
+      const [order, recs, keys, blobs] = await Promise.all([
+        req2p(t.objectStore('meta').get('order')), req2p(t.objectStore('tracks').getAll()),
+        req2p(t.objectStore('blobs').getAllKeys()), req2p(t.objectStore('blobs').getAll()),
+      ]);
+      const byId = new Map(recs.map(r => [r.id, r]));
+      const blobById = new Map(keys.map((k, i) => [k, blobs[i]]));
+      return (order || []).map(id => byId.get(id)).filter(Boolean).map(r => ({ ...r, file: blobById.get(r.id) || null }));
+    },
+  };
+  return api;
+})();
+let storeChain = Promise.resolve();
+let backupState = 'ok';
+function enqueueStore(fn) {
+  storeChain = storeChain.then(fn).catch(() => {
+    if (backupState === 'off') return;
+    backupState = 'off';
+    el.backupNote.textContent = "This browser isn't keeping a backup (storage is blocked or full). Use Save list to keep a copy of the list.";
+  });
+}
+function audioBackupFailed() {
+  if (backupState !== 'ok') return;
+  backupState = 'list-only';
+  el.backupNote.textContent = "The list is backed up in this browser, but there wasn't room for the audio. After a reload, add the folder again to fill it in.";
+}
+// Ask once for storage the browser won't clear on its own when the disk gets full.
+let persistAsked = false;
+function askPersist() {
+  if (persistAsked) return;
+  persistAsked = true;
+  try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {}); } catch { /* optional */ }
+}
+let orderTimer = 0;
+function persistOrder() {
+  clearTimeout(orderTimer);
+  orderTimer = setTimeout(() => { const ids = tracks.map(t => t.id); enqueueStore(() => store.order(ids)); }, 150);
+}
+// Write the difference between two versions of the list.
+function persistDiff(prev, next) {
+  const prevIds = new Set(prev.map(t => t.id)), nextIds = new Set(next.map(t => t.id));
+  const removed = prev.filter(t => !nextIds.has(t.id)).map(t => t.id);
+  const added = next.filter(t => !prevIds.has(t.id));
+  const kept = next.filter(t => prevIds.has(t.id));
+  const order = next.map(t => t.id);
+  enqueueStore(async () => {
+    if (removed.length) await store.del(removed);
+    if (kept.length) await store.putMeta(kept);
+    if (added.length) await store.put(added);
+    await store.order(order);
+  });
+}
+function dropPendingRestore() {
+  if (!pendingRestore) return;
+  pendingRestore = null;
+  el.restoreBar.hidden = true;
+  enqueueStore(() => store.clear());
+}
+
+// ---------------------------------------------------------------- paths + matching
+// Lists hold paths from whichever computer saved them (C:/Users/someone/...). Files are matched
+// by name plus as many enclosing folder names as agree, so the start of the path doesn't matter.
+const splitPath = p => String(p).replace(/\\/g, '/').split('/').filter(s => s && s !== '.');
+const normPart = s => s.normalize('NFC').toLowerCase();
+const pathParts = p => splitPath(p).map(normPart);
+const baseName = p => splitPath(p).pop() || String(p);
+const shownPath = t => t.listPath || t.path;
+
+function buildIndex(entries) {
+  // entries: [{file, path, ...}] -> Map(file name -> [{entry, parts}])
+  const map = new Map();
+  entries.sort((a, b) => collator.compare(a.path, b.path));
+  for (const entry of entries) {
+    const parts = pathParts(entry.path);
+    const key = parts[parts.length - 1];
+    if (!map.has(key)) map.set(key, []);
+    map.get(key).push({ entry, parts });
+  }
+  return map;
+}
+// Returns the best entry. When only the file name agrees and several tracks in the list share
+// that name (28.mp3 in different month folders), it refuses to guess.
+function findMatch(index, parts, sharedName, used) {
+  const cands = index.get(parts[parts.length - 1]);
+  if (!cands) return { entry: null };
+  let best = null, bestScore = 0;
+  for (const c of cands) {
+    let s = 0;
+    while (s < c.parts.length && s < parts.length && c.parts[c.parts.length - 1 - s] === parts[parts.length - 1 - s]) s++;
+    if (s > bestScore || (s === bestScore && best && used.has(best.entry) && !used.has(c.entry))) { best = c; bestScore = s; }
+  }
+  if (!best) return { entry: null };
+  if (bestScore < 2 && sharedName) return { entry: null, ambiguous: true };
+  return { entry: best.entry };
+}
+function nameCounts(paths) {
+  const m = new Map();
+  for (const p of paths) { const k = normPart(baseName(p)); m.set(k, (m.get(k) || 0) + 1); }
+  return m;
+}
+
+// ---------------------------------------------------------------- adding tracks
+function showNotice(text, action) {
+  el.noticeText.textContent = text || '';
+  el.notice.hidden = !text;
+  el.noticeAction.hidden = !action;
+  el.noticeAction.textContent = action ? action.label : '';
+  el.noticeAction.onclick = action ? () => { showNotice(''); action.fn(); } : null;
+}
+const plural = (n, one, many) => n === 1 ? one : many;
+const makeTrack = (file, path, listPath) => ({
+  id: newId(), file, name: file ? file.name : baseName(path), path, listPath: listPath || '',
+  size: file ? file.size : 0, lastModified: file ? file.lastModified : 0, duration: file ? file.__duration : undefined,
+});
+
+// items: [{file, path, inFolder}] from a drop or a file picker
+function handleIncoming(items) {
+  if (building || !items.length) return;
+  clearError();
+  resetStatus();
+  const lists = items.filter(it => !it.inFolder && extOf(it.file.name) === 'txt');
+  const audio = items.filter(it => AUDIO_EXT.has(extOf(it.file.name)));
+  const strays = items.filter(it => !it.inFolder && !lists.includes(it) && !audio.includes(it)).length;
+  const notes = [];
+  if (strays) notes.push(`Skipped ${strays} ${plural(strays, "file that isn't", "files that aren't")} audio (MP3, WAV, OGG, FLAC, M4A, AAC) or a list (.txt).`);
+  if (lists.length) {
+    if (lists.length > 1) notes.push(`Only one list can be loaded at a time, so ${lists[0].file.name} was used.`);
+    importList(lists[0].file, audio, notes);
+    return;
+  }
+  if (!audio.length) { showNotice(notes.join(' ') || 'No audio files were found in what you added.'); return; }
+  dropPendingRestore();
+  if (tracks.some(t => !t.file)) {
+    // While some tracks are missing, files fill those gaps first. Files from inside a dropped
+    // folder that don't match are left out; files added one by one are appended as usual.
+    const { filled, ambiguous, leftovers } = fillMissing(audio);
+    // A loose file named like a still-missing track is held back rather than appended.
+    const missingNames = new Set(tracks.filter(t => !t.file).map(t => normPart(baseName(shownPath(t)))));
+    const loose = leftovers.filter(it => !it.inFolder && !missingNames.has(normPart(it.file.name)));
+    const ignored = leftovers.filter(it => it.inFolder).length;
+    const still = tracks.filter(t => !t.file).length;
+    if (filled) notes.push(`Found ${filled} missing ${plural(filled, 'track', 'tracks')}${still ? `; ${still} still missing` : ''}.`);
+    if (ambiguous) notes.push(`${ambiguous} ${plural(ambiguous, 'track shares its', 'tracks share their')} file name with other tracks in the list. Add the folder that holds ${plural(ambiguous, 'it', 'them')} so they can be told apart.`);
+    if (ignored) notes.push(`Left out ${ignored} ${plural(ignored, "file that isn't", "files that aren't")} in the list.`);
+    if (loose.length) { addAudio(loose, notes); return; }
+    if (!filled && !ignored && !ambiguous) notes.push('None of these files match a missing track.');
+    showNotice(notes.join(' '));
+    changed();
+    return;
+  }
+  addAudio(audio, notes);
+}
+
+function addAudio(items, notes) {
+  const have = new Set(tracks.map(t => t.path + '|' + t.size + '|' + t.lastModified));
+  let dupes = 0;
+  const fresh = [];
+  items.sort((a, b) => collator.compare(a.path, b.path));
+  for (const { file, path } of items) {
+    const key = path + '|' + file.size + '|' + file.lastModified;
+    if (have.has(key)) { dupes++; continue; }
+    have.add(key);
+    fresh.push(makeTrack(file, path));
+  }
+  if (dupes) notes.push(`${dupes} ${plural(dupes, 'file was', 'files were')} already in the list.`);
+  showNotice(notes.join(' '));
+  if (!fresh.length) { changed(); return; }
+  const prev = tracks;
+  tracks = [...tracks, ...fresh];
+  selected = new Set(fresh.map(t => t.id));
+  anchorId = cursorId = fresh[0].id;
+  persistDiff(prev, tracks);
+  askPersist();
+  fresh.forEach(t => { if (dur(t) == null) queueProbe(t); });
+  invalidateResult();
+  render();
+  requestAnimationFrame(() => rowEl(fresh[0].id)?.scrollIntoView({ block: 'nearest' }));
+}
+
+async function readText(file) {
+  const buf = new Uint8Array(await file.arrayBuffer());
+  if (buf[0] === 0xFF && buf[1] === 0xFE) return new TextDecoder('utf-16le').decode(buf);
+  if (buf[0] === 0xFE && buf[1] === 0xFF) return new TextDecoder('utf-16be').decode(buf);
+  try { return new TextDecoder('utf-8', { fatal: true }).decode(buf); }
+  catch { return new TextDecoder('windows-1251').decode(buf); }
+}
+
+// Loading a list replaces the current one, like "Load files from txt" in the desktop app.
+async function importList(file, audio, notes) {
+  let text;
+  try { text = await readText(file); } catch { showNotice(`Couldn't read ${file.name}.`); return; }
+  const seen = new Set(), lines = [];
+  let nonAudio = 0;
+  for (let line of text.split(/\r\n|\r|\n/)) {
+    line = line.trim().replace(/^"(.*)"$/, '$1').trim();
+    if (!line) continue;
+    if (!AUDIO_EXT.has(extOf(line))) { nonAudio++; continue; }
+    const key = pathParts(line).join('/');
+    if (seen.has(key)) continue;
+    seen.add(key);
+    lines.push(line);
+  }
+  if (!lines.length) {
+    notes.unshift(`${file.name} doesn't list any audio files. A list has one file path per line.`);
+    showNotice(notes.join(' '));
+    return;
+  }
+  if (building) return;
+  dropPendingRestore();
+  // Match against the files added with the list and the tracks already loaded.
+  const pool = [
+    ...audio.map(it => ({ file: it.file, path: it.path, item: it })),
+    ...tracks.filter(t => t.file).map(t => ({ file: t.file, path: shownPath(t), track: t })),
+  ];
+  const index = buildIndex(pool);
+  const counts = nameCounts(lines);
+  const used = new Set();
+  let ambiguous = 0;
+  const next = lines.map(line => {
+    const m = findMatch(index, pathParts(line), counts.get(normPart(baseName(line))) > 1, used);
+    if (m.ambiguous) ambiguous++;
+    const e = m.entry;
+    if (!e) return makeTrack(null, line, line);
+    const reuse = e.track && !used.has(e);
+    used.add(e);
+    if (reuse) return { ...e.track, listPath: line };  // keeps its id, stored audio and length
+    return makeTrack(e.file, e.path, line);
+  });
+  const found = next.filter(t => t.file).length;
+  // Added files that no line points to (tracks already loaded may have been reused instead).
+  const droppedIndex = buildIndex(pool.filter(e => e.item));
+  const inList = new Set();
+  for (const line of lines) {
+    const m = findMatch(droppedIndex, pathParts(line), counts.get(normPart(baseName(line))) > 1, inList);
+    if (m.entry) inList.add(m.entry);
+  }
+  const ignored = audio.length - inList.size;
+  notes.unshift(found === next.length
+    ? `Loaded ${file.name}: all ${next.length} tracks found.`
+    : `Loaded ${file.name}: found ${found} of ${next.length} tracks.`);
+  if (ambiguous) notes.push(`${ambiguous} ${plural(ambiguous, 'track shares its', 'tracks share their')} file name with other tracks, so ${plural(ambiguous, 'it needs its', 'they need their')} folder to be told apart.`);
+  if (ignored) notes.push(`Left out ${ignored} audio ${plural(ignored, "file that isn't", "files that aren't")} in the list.`);
+  if (nonAudio) notes.push(`Skipped ${nonAudio} ${plural(nonAudio, "line that isn't", "lines that aren't")} an audio file path.`);
+  const prev = tracks;
+  stopPreview();
+  tracks = next;
+  selected = new Set();
+  anchorId = cursorId = null;
+  persistDiff(prev, next);
+  askPersist();
+  next.forEach(t => { if (t.file && dur(t) == null) queueProbe(t); });
+  invalidateResult();
+  render();
+  showNotice(notes.join(' '), prev.length ? { label: 'Undo', fn: () => replaceTracks(prev) } : null);
+  el.list.scrollTop = 0;
+}
+
+function replaceTracks(list) {
+  if (building) return;
+  const prev = tracks;
+  stopPreview();
+  tracks = list;
+  selected = new Set();
+  anchorId = cursorId = null;
+  persistDiff(prev, list);
+  list.forEach(t => { if (t.file && dur(t) == null) queueProbe(t); });
+  changed();
+}
+
+function fillMissing(items) {
+  const index = buildIndex(items.map(it => ({ file: it.file, path: it.path, item: it })));
+  const counts = nameCounts(tracks.map(shownPath));
+  const used = new Set(), filled = [];
+  let ambiguous = 0;
+  for (const t of tracks) {
+    if (t.file) continue;
+    const p = shownPath(t);
+    const m = findMatch(index, pathParts(p), counts.get(normPart(baseName(p))) > 1, used);
+    if (m.ambiguous) ambiguous++;
+    if (!m.entry) continue;
+    used.add(m.entry);
+    const f = m.entry.file;
+    Object.assign(t, { file: f, name: f.name, path: m.entry.path, size: f.size, lastModified: f.lastModified, duration: f.__duration });
+    if (!t.listPath) t.listPath = p;
+    filled.push(t);
+  }
+  if (filled.length) {
+    enqueueStore(() => store.put(filled));
+    filled.forEach(t => { if (dur(t) == null) queueProbe(t); });
+    askPersist();
+  }
+  const usedItems = new Set([...used].map(e => e.item));
+  return { filled: filled.length, ambiguous, leftovers: items.filter(it => !usedItems.has(it)) };
+}
+
+const listText = list => list.map(shownPath).join('\n') + '\n';
+
+const fileItems = (list, inFolder) => [...list].map(f => ({ file: f, path: f.webkitRelativePath || f.name, inFolder: inFolder || !!f.webkitRelativePath }));
+
+async function itemsFromDrop(dt) {
+  // webkitGetAsEntry must be read synchronously, before the first await.
+  const entries = [...(dt.items || [])].filter(i => i.kind === 'file').map(i => i.webkitGetAsEntry && i.webkitGetAsEntry()).filter(Boolean);
+  if (!entries.length) return fileItems(dt.files || [], false);
+  const out = [];
+  async function walk(entry, prefix, inFolder) {
+    if (entry.isFile) {
+      const f = await new Promise((res, rej) => entry.file(res, rej)).catch(() => null);
+      if (f) out.push({ file: f, path: prefix + f.name, inFolder });
+    } else if (entry.isDirectory) {
+      const reader = entry.createReader();
+      const all = [];
+      for (;;) {
+        const batch = await new Promise((res, rej) => reader.readEntries(res, rej)).catch(() => []);
+        if (!batch.length) break;
+        all.push(...batch);
+      }
+      for (const e of all) await walk(e, prefix + entry.name + '/', true);
+    }
+  }
+  for (const e of entries) await walk(e, '', false);
+  return out;
+}
+
+// Reading the length from metadata is cheap (like TinyTag in the desktop app); the real
+// length is confirmed when the file is decoded during the build.
+const probeQueue = [];
+let probing = 0;
+function queueProbe(t) { probeQueue.push(t); pumpProbes(); }
+function pumpProbes() {
+  while (probing < 3 && probeQueue.length) {
+    const t = probeQueue.shift();
+    if (!tracks.includes(t)) continue;
+    probing++;
+    probeDuration(t.file).then(d => {
+      probing--;
+      if (dur(t) == null) t.duration = d;
+      scheduleRender();
+      pumpProbes();
+    });
+  }
+}
+function probeDuration(file) {
+  return new Promise(resolve => {
+    const a = document.createElement('audio');
+    let url;
+    try { url = URL.createObjectURL(file); } catch { resolve(NaN); return; }
+    let finished = false;
+    const done = d => {
+      if (finished) return;
+      finished = true;
+      clearTimeout(timer);
+      a.removeAttribute('src');
+      try { a.load(); } catch {}
+      URL.revokeObjectURL(url);
+      resolve(d);
+    };
+    const timer = setTimeout(() => done(NaN), 20000);
+    a.preload = 'metadata';
+    a.onloadedmetadata = () => {
+      if (a.duration === Infinity) { // some files only report a length after a seek
+        a.ondurationchange = () => { if (isFinite(a.duration)) done(a.duration); };
+        a.currentTime = 1e9;
+      } else done(isFinite(a.duration) ? a.duration : NaN);
+    };
+    a.onerror = () => done(NaN);
+    a.src = url;
+  });
+}
+
+// ---------------------------------------------------------------- list editing
+const indexOf = id => tracks.findIndex(t => t.id === id);
+const selectedIndices = () => tracks.map((t, i) => selected.has(t.id) ? i : -1).filter(i => i >= 0);
+const rowEl = id => el.list.querySelector(`[data-id="${id}"]`);
+
+function resetStatus() { delete el.status.dataset.sticky; }
+function changed() {
+  invalidateResult();
+  clearError();
+  resetStatus();
+  el.noticeAction.hidden = true;
+  persistOrder();
+  render();
+}
+
+function moveSelected(delta) {
+  if (building || !selected.size) return;
+  const idx = selectedIndices();
+  let moved = false;
+  if (delta < 0) {
+    for (const i of idx) if (i > 0 && !selected.has(tracks[i - 1].id)) { [tracks[i - 1], tracks[i]] = [tracks[i], tracks[i - 1]]; moved = true; }
+  } else {
+    for (const i of idx.reverse()) if (i < tracks.length - 1 && !selected.has(tracks[i + 1].id)) { [tracks[i + 1], tracks[i]] = [tracks[i], tracks[i + 1]]; moved = true; }
+  }
+  if (moved) { changed(); revealSelection(delta < 0 ? 'first' : 'last'); }
+}
+function moveSelectedToEdge(top) {
+  if (building || !selected.size) return;
+  const sel = tracks.filter(t => selected.has(t.id));
+  const rest = tracks.filter(t => !selected.has(t.id));
+  tracks = top ? [...sel, ...rest] : [...rest, ...sel];
+  changed();
+  revealSelection(top ? 'first' : 'last');
+}
+function moveIdsTo(ids, insertAt) {
+  const moving = tracks.filter(t => ids.includes(t.id));
+  const before = tracks.slice(0, insertAt).filter(t => ids.includes(t.id)).length;
+  const rest = tracks.filter(t => !ids.includes(t.id));
+  const at = insertAt - before;
+  rest.splice(at, 0, ...moving);
+  tracks = rest;
+  changed();
+}
+function revealSelection(which) {
+  const idx = selectedIndices();
+  if (!idx.length) return;
+  const t = tracks[which === 'last' ? idx[idx.length - 1] : idx[0]];
+  requestAnimationFrame(() => rowEl(t.id)?.scrollIntoView({ block: 'nearest' }));
+}
+
+function removeIds(ids) {
+  if (building || !ids.length) return;
+  const drop = new Set(ids);
+  const firstIdx = tracks.findIndex(t => drop.has(t.id));
+  if (playingId && drop.has(playingId)) stopPreview();
+  const prev = tracks;
+  tracks = tracks.filter(t => !drop.has(t.id));
+  persistDiff(prev, tracks);
+  selected = new Set();
+  const next = tracks[Math.min(firstIdx, tracks.length - 1)];
+  if (next) { selected.add(next.id); anchorId = cursorId = next.id; } else { anchorId = cursorId = null; }
+  changed();
+}
+
+function clearAll() {
+  stopPreview();
+  tracks = [];
+  selected = new Set();
+  anchorId = cursorId = null;
+  el.clearBar.hidden = true;
+  showNotice('');
+  enqueueStore(() => store.clear());
+  changed();
+}
+
+// ---------------------------------------------------------------- preview
+const previewAudio = new Audio();
+let previewUrl = null;
+previewAudio.onended = () => stopPreview();
+function stopPreview() {
+  previewAudio.pause();
+  if (previewUrl) { URL.revokeObjectURL(previewUrl); previewUrl = null; }
+  const was = playingId;
+  playingId = null;
+  if (was) updateRow(was);
+}
+function togglePreview(id) {
+  if (playingId === id) { stopPreview(); return; }
+  stopPreview();
+  const t = tracks.find(x => x.id === id);
+  if (!t || !t.file) return;
+  previewUrl = URL.createObjectURL(t.file);
+  previewAudio.src = previewUrl;
+  playingId = id;
+  updateRow(id);
+  previewAudio.play().catch(() => {
+    stopPreview();
+    showNotice(`"${t.name}" can't be previewed in this browser.`);
+  });
+}
+
+// ---------------------------------------------------------------- rendering
+let renderQueued = false;
+function scheduleRender() {
+  if (renderQueued) return;
+  renderQueued = true;
+  requestAnimationFrame(() => { renderQueued = false; render(); });
+}
+function render() {
+  renderList();
+  renderArrangement();
+  renderSummary();
+  renderToolbar();
+  renderMissing();
+}
+function renderMissing() {
+  const k = tracks.filter(t => !t.file).length;
+  el.missingBar.hidden = !k || building;
+  if (!k) return;
+  el.missingText.textContent = `${k} ${plural(k, 'track has', 'tracks have')} no audio file on this computer yet. `
+    + `Drop or add the folder that holds ${plural(k, 'it', 'them')}; a parent folder works too. Files are matched by name and folder, and anything not in the list is left out.`;
+}
+
+function roleOf(i, n) { return i === 0 ? 'start' : i === n - 1 ? 'end' : 'mix'; }
+const ROLE_LABEL = { start: 'Start', mix: 'Mixed', end: 'End' };
+
+function renderList() {
+  const n = tracks.length;
+  el.list.hidden = n === 0;
+  el.empty.hidden = n > 0;
+  const frag = document.createDocumentFragment();
+  tracks.forEach((t, i) => {
+    const li = document.createElement('li');
+    li.dataset.id = t.id;
+    li.setAttribute('role', 'option');
+    li.innerHTML = '<span class="idx"></span><span class="role"></span><span class="name"><span class="fname"></span><span class="fpath"></span></span><span class="dur"></span><span class="size"></span>'
+      + '<button type="button" class="mini play" tabindex="-1"></button>'
+      + `<button type="button" class="mini del" tabindex="-1" aria-label="Remove" title="Remove">${ICON_DEL}</button>`;
+    li.querySelector('.idx').textContent = i + 1;
+    li.querySelector('.role').textContent = ROLE_LABEL[roleOf(i, n)];
+    li.querySelector('.fname').textContent = t.name;
+    const folder = splitPath(shownPath(t)).slice(-3, -1).join(' / ');
+    li.querySelector('.fpath').textContent = folder;
+    li.querySelector('.fpath').hidden = !folder;
+    li.title = shownPath(t);
+    li.querySelector('.size').textContent = t.file ? fmtSize(t.size) : '';
+    frag.appendChild(li);
+    paintRow(li, t, i, n);
+  });
+  el.list.replaceChildren(frag);
+  el.list.classList.toggle('locked', building);
+}
+function paintRow(li, t, i, n) {
+  const role = roleOf(i, n);
+  li.className = `row is-${role}`
+    + (selected.has(t.id) ? ' is-selected' : '')
+    + (t.id === cursorId ? ' is-cursor' : '')
+    + (t.id === errorId ? ' has-error' : '')
+    + (t.id === playingId ? ' is-playing' : '')
+    + (t.file ? '' : ' is-missing');
+  li.setAttribute('aria-selected', selected.has(t.id) ? 'true' : 'false');
+  li.draggable = !building;
+  const d = dur(t);
+  li.querySelector('.dur').textContent = !t.file ? 'Missing' : d != null ? fmtTime(d) : (t.duration === undefined ? '…' : '–:––');
+  li.querySelector('.dur').title = !t.file ? 'No audio file yet. Add the folder that holds it.' : d != null ? '' : (t.duration === undefined ? 'Reading length' : 'Length is known after the build');
+  const play = li.querySelector('.play');
+  play.innerHTML = t.id === playingId ? ICON_STOP : ICON_PLAY;
+  play.setAttribute('aria-label', t.id === playingId ? 'Stop preview' : 'Preview');
+  play.title = t.id === playingId ? 'Stop' : 'Preview';
+}
+function updateRow(id) {
+  const li = rowEl(id);
+  const i = indexOf(id);
+  if (li && i >= 0) paintRow(li, tracks[i], i, tracks.length);
+}
+function repaintSelection() {
+  const n = tracks.length;
+  tracks.forEach((t, i) => { const li = el.list.children[i]; if (li) paintRow(li, t, i, n); });
+  renderToolbar();
+}
+
+function legendItem(cls, label, val, extra) {
+  const s = document.createElement('span');
+  s.className = 'lg' + (extra ? ' ' + extra : '');
+  if (cls) { const k = document.createElement('span'); k.className = 'key ' + cls; s.appendChild(k); }
+  const l = document.createElement('span'); l.className = 'lbl'; l.textContent = label; s.appendChild(l);
+  if (val) { const v = document.createElement('span'); v.className = extra === 'schematic' ? 'note' : 'val'; v.textContent = val; s.appendChild(v); }
+  return s;
+}
+
+function outputSeconds() {
+  const n = tracks.length;
+  if (n < 3) return null;
+  const s = dur(tracks[0]), e = dur(tracks[n - 1]);
+  const mids = tracks.slice(1, -1).map(dur);
+  if (s == null || e == null || mids.some(x => x == null)) return null;
+  return s + Math.max(...mids) + e;
+}
+
+function renderArrangement() {
+  const n = tracks.length;
+  const schematic = n < 3;
+  el.lane.classList.toggle('is-schematic', schematic);
+  let s, e, mids, maxMid;
+  if (schematic) {
+    s = 1; e = 1; mids = [1, .62, .84, .45]; maxMid = 1;
+    el.segStart.style.flexGrow = 1; el.segMix.style.flexGrow = 3.4; el.segEnd.style.flexGrow = 1;
+  } else {
+    s = dur(tracks[0]); e = dur(tracks[n - 1]);
+    mids = tracks.slice(1, -1).map(dur);
+    maxMid = Math.max(0, ...mids.filter(x => x != null));
+    const allKnown = s != null && e != null && maxMid > 0;
+    el.segStart.style.flexGrow = allKnown ? s : 1;
+    el.segMix.style.flexGrow = allKnown ? maxMid : 3.4;
+    el.segEnd.style.flexGrow = allKnown ? e : 1;
+  }
+  const bars = document.createDocumentFragment();
+  for (const d of mids) {
+    const b = document.createElement('div');
+    b.className = 'layer' + (d == null || !maxMid ? ' unknown' : '');
+    b.style.width = (d == null || !maxMid ? 100 : Math.max(2, d / maxMid * 100)) + '%';
+    bars.appendChild(b);
+  }
+  el.layers.replaceChildren(bars);
+  el.layers.classList.toggle('dense', mids.length > 24);
+
+  const lg = [];
+  if (schematic) {
+    lg.push(legendItem('key-start', 'Start', 'plays first, alone', 'schematic'));
+    lg.push(legendItem('key-mix', 'Mixed', 'the middle tracks, all at once', 'schematic'));
+    lg.push(legendItem('key-end', 'End', 'plays last, alone', 'schematic'));
+    lg.push(legendItem('', n ? `${3 - n} more track${3 - n > 1 ? 's' : ''} needed` : 'Add 3 or more tracks', '', 'total'));
+  } else {
+    const k = n - 2;
+    lg.push(legendItem('key-start', 'Start', fmtTime(s)));
+    lg.push(legendItem('key-mix', `${k} mixed`, maxMid ? `longest ${fmtTime(maxMid)}` : ''));
+    lg.push(legendItem('key-end', 'End', fmtTime(e)));
+    const total = outputSeconds();
+    const missing = tracks.some(t => !t.file);
+    lg.push(legendItem('', 'Output', total != null ? fmtTime(total) : missing ? 'tracks missing' : 'measuring…', 'total'));
+  }
+  el.legend.replaceChildren(...lg);
+  requestAnimationFrame(fitLabels);
+}
+function fitLabels() {
+  for (const seg of [el.segStart, el.segEnd]) seg.classList.toggle('narrow', seg.clientWidth < 64);
+}
+el.lane.addEventListener('transitionend', fitLabels);
+window.addEventListener('resize', fitLabels);
+
+function estimateBytes(f, seconds) {
+  if (f.kind === 'mp3') return f.kbps * 125 * seconds;
+  return 44 + seconds * f.rate * 2 * 2;
+}
+
+function renderSummary() {
+  const n = tracks.length;
+  const f = currentFormat();
+  const total = outputSeconds();
+  const pending = tracks.some(t => t.file && t.duration === undefined);
+  const missing = tracks.filter(t => !t.file).length;
+  el.extLabel.textContent = f.ext;
+  el.sumLength.textContent = n < 3 ? '—' : total != null ? fmtTime(total) : missing ? '—' : pending ? 'measuring…' : 'known after build';
+  el.sumTracks.textContent = n < 3 ? `${n} of 3 needed` : missing ? `${n}, ${missing} missing` : `1 + ${n - 2} mixed + 1`;
+  el.sumSize.textContent = total != null ? '≈ ' + fmtSize(estimateBytes(f, total)) : '—';
+  if (!building) {
+    el.buildBtn.disabled = n < 3 || missing > 0;
+    if (!result && !el.status.dataset.sticky) {
+      el.status.textContent = n < 3 ? 'Add at least 3 tracks to build.'
+        : missing ? `Add the audio for ${missing} missing ${plural(missing, 'track', 'tracks')} to build.` : 'Ready to build.';
+    }
+  }
+}
+
+function renderToolbar() {
+  const n = tracks.length, k = selected.size;
+  const idx = selectedIndices();
+  const lock = building;
+  el.upBtn.disabled = lock || !k || idx.every((v, j) => v === j);
+  el.topBtn.disabled = el.upBtn.disabled;
+  el.downBtn.disabled = lock || !k || idx.every((v, j) => v === n - k + j);
+  el.bottomBtn.disabled = el.downBtn.disabled;
+  el.removeBtn.disabled = lock || !k;
+  el.clearBtn.disabled = lock || !n;
+  el.saveListBtn.disabled = !n;
+  el.loadListBtn.disabled = lock;
+  el.addFilesBtn.disabled = el.addFolderBtn.disabled = el.emptyAddBtn.disabled = el.sampleBtn.disabled = lock;
+  el.outName.disabled = el.format.disabled = lock;
+  el.countLabel.textContent = `${n} track${n === 1 ? '' : 's'}` + (k > 1 ? ` · ${k} selected` : '');
+}
+
+// ---------------------------------------------------------------- list interaction
+el.list.addEventListener('mousedown', () => el.list.classList.remove('kbd'));
+el.list.addEventListener('click', e => {
+  const li = e.target.closest('.row');
+  if (!li || building) return;
+  const id = li.dataset.id;
+  if (e.target.closest('.play')) { togglePreview(id); return; }
+  if (e.target.closest('.del')) { removeIds([id]); return; }
+  if (e.shiftKey && anchorId && indexOf(anchorId) >= 0) {
+    const a = indexOf(anchorId), b = indexOf(id);
+    const [lo, hi] = a < b ? [a, b] : [b, a];
+    if (!(e.ctrlKey || e.metaKey)) selected = new Set();
+    for (let i = lo; i <= hi; i++) selected.add(tracks[i].id);
+  } else if (e.ctrlKey || e.metaKey) {
+    selected.has(id) ? selected.delete(id) : selected.add(id);
+    anchorId = id;
+  } else {
+    selected = new Set([id]);
+    anchorId = id;
+  }
+  cursorId = id;
+  repaintSelection();
+});
+el.list.addEventListener('dblclick', e => {
+  const li = e.target.closest('.row');
+  if (li && !e.target.closest('button') && !building) togglePreview(li.dataset.id);
+});
+
+el.list.addEventListener('keydown', e => {
+  if (building || !tracks.length) return;
+  el.list.classList.add('kbd');
+  const n = tracks.length;
+  const key = e.key;
+  if ((key === 'ArrowUp' || key === 'ArrowDown') && e.altKey) {
+    e.preventDefault();
+    moveSelected(key === 'ArrowUp' ? -1 : 1);
+    return;
+  }
+  if (key === 'ArrowUp' || key === 'ArrowDown' || key === 'Home' || key === 'End') {
+    e.preventDefault();
+    let i = cursorId ? indexOf(cursorId) : -1;
+    if (key === 'ArrowUp') i = i < 0 ? 0 : Math.max(0, i - 1);
+    else if (key === 'ArrowDown') i = i < 0 ? 0 : Math.min(n - 1, i + 1);
+    else if (key === 'Home') i = 0;
+    else i = n - 1;
+    cursorId = tracks[i].id;
+    if (e.shiftKey && anchorId && indexOf(anchorId) >= 0) {
+      const a = indexOf(anchorId);
+      const [lo, hi] = a < i ? [a, i] : [i, a];
+      selected = new Set(tracks.slice(lo, hi + 1).map(t => t.id));
+    } else {
+      selected = new Set([cursorId]);
+      anchorId = cursorId;
+    }
+    repaintSelection();
+    rowEl(cursorId)?.scrollIntoView({ block: 'nearest' });
+    return;
+  }
+  if (key === 'Delete' || key === 'Backspace') { e.preventDefault(); removeIds([...selected]); return; }
+  if ((e.ctrlKey || e.metaKey) && key.toLowerCase() === 'a') {
+    e.preventDefault();
+    selected = new Set(tracks.map(t => t.id));
+    repaintSelection();
+    return;
+  }
+  if (key === ' ' || key === 'Enter') {
+    e.preventDefault();
+    const id = cursorId || [...selected][0];
+    if (id) togglePreview(id);
+  }
+});
+
+// drag to reorder rows
+let dropAt = -1;
+function clearDropMarks() { el.list.querySelectorAll('.drop-before,.drop-after,.is-dragging').forEach(r => r.classList.remove('drop-before', 'drop-after', 'is-dragging')); }
+el.list.addEventListener('dragstart', e => {
+  const li = e.target.closest && e.target.closest('.row');
+  if (!li || building) { e.preventDefault(); return; }
+  const id = li.dataset.id;
+  if (!selected.has(id)) { selected = new Set([id]); anchorId = cursorId = id; repaintSelection(); }
+  dragIds = tracks.filter(t => selected.has(t.id)).map(t => t.id);
+  e.dataTransfer.effectAllowed = 'move';
+  e.dataTransfer.setData('text/plain', dragIds.length + ' track(s)');
+  dragIds.forEach(x => rowEl(x)?.classList.add('is-dragging'));
+});
+el.list.addEventListener('dragover', e => {
+  if (!dragIds) return;
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+  const rows = [...el.list.children];
+  let at = rows.length;
+  for (let i = 0; i < rows.length; i++) {
+    const r = rows[i].getBoundingClientRect();
+    if (e.clientY < r.top + r.height / 2) { at = i; break; }
+  }
+  if (at === dropAt) return;
+  dropAt = at;
+  el.list.querySelectorAll('.drop-before,.drop-after').forEach(r => r.classList.remove('drop-before', 'drop-after'));
+  if (at < rows.length) rows[at].classList.add('drop-before');
+  else if (rows.length) rows[rows.length - 1].classList.add('drop-after');
+});
+el.list.addEventListener('drop', e => {
+  if (!dragIds) return;
+  e.preventDefault();
+  e.stopPropagation();
+  const ids = dragIds, at = dropAt;
+  dragIds = null; dropAt = -1;
+  clearDropMarks();
+  if (at >= 0) moveIdsTo(ids, at);
+});
+el.list.addEventListener('dragend', () => { dragIds = null; dropAt = -1; clearDropMarks(); });
+
+// dropping files anywhere on the page
+const hasFiles = e => !dragIds && e.dataTransfer && [...e.dataTransfer.types].includes('Files');
+window.addEventListener('dragover', e => {
+  if (!hasFiles(e)) return;
+  e.preventDefault();
+  e.dataTransfer.dropEffect = building ? 'none' : 'copy';
+  if (!building) el.dropOverlay.hidden = false;
+});
+el.dropOverlay.addEventListener('dragleave', e => { if (e.target === el.dropOverlay) el.dropOverlay.hidden = true; });
+window.addEventListener('drop', async e => {
+  if (!hasFiles(e)) return;
+  e.preventDefault();
+  el.dropOverlay.hidden = true;
+  if (building) return;
+  handleIncoming(await itemsFromDrop(e.dataTransfer));
+});
+
+// ---------------------------------------------------------------- buttons
+el.addFilesBtn.onclick = el.emptyAddBtn.onclick = () => el.fileInput.click();
+el.addFolderBtn.onclick = el.missingAddBtn.onclick = () => (el.addFolderBtn.hidden ? el.fileInput : el.folderInput).click();
+el.loadListBtn.onclick = () => el.listInput.click();
+if (!('webkitdirectory' in el.folderInput)) el.addFolderBtn.hidden = true;
+el.fileInput.onchange = () => { handleIncoming(fileItems(el.fileInput.files, false)); el.fileInput.value = ''; };
+el.folderInput.onchange = () => { handleIncoming(fileItems(el.folderInput.files, true)); el.folderInput.value = ''; };
+el.listInput.onchange = () => { handleIncoming(fileItems(el.listInput.files, false)); el.listInput.value = ''; };
+el.missingRemoveBtn.onclick = () => removeIds(tracks.filter(t => !t.file).map(t => t.id));
+el.saveListBtn.onclick = async () => {
+  if (!tracks.length) return;
+  const text = listText(tracks);
+  await downloadsCap;
+  if (dlCap) await saveViaCapability('backup.txt', text);
+  else saveViaLink(new Blob([text], { type: 'text/plain;charset=utf-8' }), 'backup.txt');
+};
+el.upBtn.onclick = () => moveSelected(-1);
+el.downBtn.onclick = () => moveSelected(1);
+el.topBtn.onclick = () => moveSelectedToEdge(true);
+el.bottomBtn.onclick = () => moveSelectedToEdge(false);
+el.removeBtn.onclick = () => removeIds([...selected]);
+el.clearBtn.onclick = () => {
+  el.clearText.textContent = `Remove all ${tracks.length} track${tracks.length === 1 ? '' : 's'} from the list?`;
+  el.clearBar.hidden = false;
+  el.clearNo.focus();
+};
+el.clearNo.onclick = () => { el.clearBar.hidden = true; };
+el.clearYes.onclick = clearAll;
+el.noticeClose.onclick = () => showNotice('');
+el.sampleBtn.onclick = () => handleIncoming(makeSamples());
+
+el.restoreBtn.onclick = () => {
+  const recs = pendingRestore || [];
+  pendingRestore = null;
+  el.restoreBar.hidden = true;
+  tracks = recs.map(r => ({ id: r.id, file: r.file, name: r.name, path: r.path, listPath: r.listPath || '', size: r.size, lastModified: r.lastModified, duration: undefined }));
+  selected = new Set();
+  tracks.forEach(t => { if (t.file) queueProbe(t); });
+  render();
+};
+el.discardBtn.onclick = dropPendingRestore;
+
+el.format.onchange = () => { storageSet('interapp.format', el.format.value); invalidateResult(); resetStatus(); render(); };
+el.outName.oninput = () => { storageSet('interapp.name', el.outName.value); if (result) renderResult(); };
+
+// ---------------------------------------------------------------- sample tones
+function wavHeader(frames, ch, rate) {
+  const b = new ArrayBuffer(44), v = new DataView(b);
+  const w = (o, s) => { for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); };
+  const data = frames * ch * 2;
+  w(0, 'RIFF'); v.setUint32(4, 36 + data, true); w(8, 'WAVE');
+  w(12, 'fmt '); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, ch, true);
+  v.setUint32(24, rate, true); v.setUint32(28, rate * ch * 2, true); v.setUint16(32, ch * 2, true); v.setUint16(34, 16, true);
+  w(36, 'data'); v.setUint32(40, data, true);
+  return new Uint8Array(b);
+}
+function makeSamples() {
+  const rate = 22050, TAU = 2 * Math.PI;
+  const fade = (t, d, a, r) => Math.max(0, Math.min(1, t / a, (d - t) / r));
+  const defs = [
+    ['Sample 1 - Intro bell.wav', 2.5, t => 0.42 * Math.exp(-2.2 * t) * Math.min(1, t / 0.005) * (Math.sin(TAU * 660 * t) + 0.5 * Math.sin(TAU * 1320 * t + 1))],
+    ['Sample 2 - Low drone.wav', 9, (t, d) => 0.17 * fade(t, d, 1, 1.5) * (Math.sin(TAU * 110 * t) + 0.6 * Math.sin(TAU * 165 * t))],
+    ['Sample 3 - Pad.wav', 7, (t, d) => 0.09 * fade(t, d, 1.2, 1.5) * (Math.sin(TAU * 220 * t) + Math.sin(TAU * 277.18 * t) + Math.sin(TAU * 329.63 * t))],
+    ['Sample 4 - Pulse.wav', 5, (t, d) => 0.2 * fade(t, d, 0.2, 0.5) * (0.5 + 0.5 * Math.sin(TAU * 2 * t)) * Math.sin(TAU * 440 * t)],
+    ['Sample 5 - Outro bell.wav', 3, t => 0.42 * Math.exp(-1.6 * t) * Math.min(1, t / 0.005) * (Math.sin(TAU * 523.25 * t) + 0.4 * Math.sin(TAU * 1046.5 * t + 0.5))],
+  ];
+  return defs.map(([name, d, fn], k) => {
+    const n = Math.round(d * rate), pcm = new Int16Array(n);
+    for (let i = 0; i < n; i++) pcm[i] = Math.max(-1, Math.min(1, fn(i / rate, d))) * 32767;
+    const file = new File([wavHeader(n, 1, rate), pcm.buffer], name, { type: 'audio/wav', lastModified: 1700000000000 + k });
+    file.__duration = d;
+    return { file, path: name, inFolder: false };
+  });
+}
+
+// ---------------------------------------------------------------- build
+class BuildError extends Error { constructor(msg, id) { super(msg); this.trackId = id; } }
+class Cancelled extends Error {}
+
+function clearError() {
+  el.error.hidden = true;
+  if (errorId) { const id = errorId; errorId = null; updateRow(id); }
+}
+function showError(msg, id) {
+  el.error.textContent = msg;
+  el.error.hidden = false;
+  if (id) { errorId = id; updateRow(id); rowEl(id)?.scrollIntoView({ block: 'nearest' }); }
+}
+function setProgress(frac, text) {
+  const pct = Math.max(0, Math.min(1, frac)) * 100;
+  el.bar.style.width = pct.toFixed(1) + '%';
+  el.progress.setAttribute('aria-valuenow', String(Math.round(pct)));
+  if (text != null) el.status.textContent = text;
+}
+// A MessageChannel hop lets the page repaint without the 1 s timer throttling of background tabs.
+const yieldToUI = () => new Promise(r => { const c = new MessageChannel(); c.port1.onmessage = () => r(); c.port2.postMessage(0); });
+const checkCancel = () => { if (cancelRequested) throw new Cancelled(); };
+
+function lock(on) {
+  building = on;
+  el.buildBtn.textContent = on ? 'Cancel' : 'Build';
+  el.buildBtn.classList.toggle('is-cancel', on);
+  el.buildBtn.classList.toggle('primary', !on);
+  el.tracksPanel.classList.toggle('is-locked', on);
+  el.list.classList.toggle('locked', on);
+  [...el.list.children].forEach(li => { li.draggable = !on; });
+  renderToolbar();
+}
+
+function makeDecoder(rate) {
+  const Ctx = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+  if (!Ctx) throw new BuildError("This browser can't decode audio. Try a current version of Chrome, Edge, Firefox or Safari.");
+  let ctx;
+  try { ctx = new Ctx(1, 1, rate); } catch { ctx = new Ctx(1, 1, 44100); }
+  return {
+    rate: ctx.sampleRate,
+    decode: data => new Promise((res, rej) => {
+      const p = ctx.decodeAudioData(data, res, rej);
+      if (p && p.then) p.then(res, rej);
+    }),
+  };
+}
+
+async function build() {
+  const list = tracks.slice();
+  const n = list.length;
+  if (n < 3) { showError('Add at least 3 tracks: a start track, one or more tracks to mix, and an end track.'); return; }
+  const firstMissing = list.find(t => !t.file);
+  if (firstMissing) {
+    showError(`"${firstMissing.name}" has no audio file yet. Add the folder that holds the missing tracks, or remove them from the list.`, firstMissing.id);
+    return;
+  }
+  const f = currentFormat();
+  if (f.kind === 'mp3' && typeof lamejs === 'undefined') {
+    showError("The MP3 encoder didn't load, probably because the page is offline. Reload with an internet connection, or choose WAV.");
+    return;
+  }
+  stopPreview();
+  clearError();
+  invalidateResult();
+  cancelRequested = false;
+  lock(true);
+  delete el.status.dataset.sticky;
+  const t0 = performance.now();
+  // Decoding counts for 35% of the bar, encoding for 65%.
+  let decoded = 0;
+  const decodeFrac = () => 0.35 * decoded / n;
+
+  try {
+    const dec = makeDecoder(f.rate);
+    const rate = dec.rate;
+    const read = async (t, label) => {
+      checkCancel();
+      setProgress(decodeFrac(), label);
+      let buf;
+      try {
+        buf = await dec.decode(await t.file.arrayBuffer());
+      } catch (err) {
+        if (err instanceof RangeError) throw err;
+        throw new BuildError(`Couldn't read "${t.name}". The file may be damaged, or this browser can't decode its format. Remove it from the list, or re-save it as MP3 or WAV.`, t.id);
+      }
+      t.duration = buf.duration;
+      decoded++;
+      setProgress(decodeFrac());
+      return buf;
+    };
+
+    // 1. Mix the middle tracks. They all start at 0 and the mix lasts as long as the longest one,
+    //    like AudioSegment.silent(max_length).overlay(...) in the desktop app.
+    const mids = list.slice(1, -1);
+    let cap = Math.ceil(Math.max(0, ...mids.map(t => dur(t) || 0)) * rate) + rate;
+    let mix = [new Float32Array(cap)];
+    let mixLen = 0;
+    for (let i = 0; i < mids.length; i++) {
+      const buf = await read(mids[i], `Mixing ${i + 1} of ${mids.length}: ${mids[i].name}`);
+      const len = buf.length;
+      if (len > cap) {
+        cap = Math.max(len, Math.ceil(cap * 1.25));
+        mix = mix.map(ch => { const g = new Float32Array(cap); g.set(ch); return g; });
+      }
+      if (buf.numberOfChannels > 1 && mix.length === 1) mix.push(Float32Array.from(mix[0]));
+      for (let c = 0; c < mix.length; c++) {
+        const src = buf.getChannelData(Math.min(c, buf.numberOfChannels - 1));
+        const dst = mix[c];
+        for (let k = 0; k < len; k++) dst[k] += src[k];
+      }
+      if (len > mixLen) mixLen = len;
+    }
+
+    // 2. Start and end tracks play on their own.
+    const first = await read(list[0], `Reading start track: ${list[0].name}`);
+    const last = await read(list[n - 1], `Reading end track: ${list[n - 1].name}`);
+    const chans = b => b.numberOfChannels > 1 ? [b.getChannelData(0), b.getChannelData(1)] : [b.getChannelData(0)];
+    const outCh = Math.min(2, Math.max(mix.length, first.numberOfChannels, last.numberOfChannels));
+    const segs = [
+      { data: chans(first), len: first.length },
+      { data: mix, len: mixLen },
+      { data: chans(last), len: last.length },
+    ];
+    const totalFrames = segs.reduce((a, s) => a + s.len, 0);
+
+    // 3. Encode start + mix + end in one pass. Samples are clipped to the 16-bit range,
+    //    the same saturation pydub's overlay applies.
+    const parts = [];
+    let enc = null;
+    if (f.kind === 'mp3') enc = new lamejs.Mp3Encoder(outCh, rate, f.kbps);
+    else parts.push(wavHeader(totalFrames, outCh, rate));
+    const CHUNK = 1152 * 40;
+    const L = new Int16Array(CHUNK), R = new Int16Array(CHUNK);
+    let done = 0, lastYield = performance.now();
+    const label = f.kind === 'mp3' ? `Encoding MP3 at ${f.kbps} kbps` : 'Writing WAV';
+    for (const s of segs) {
+      const a = s.data[0], b = s.data[Math.min(1, s.data.length - 1)];
+      for (let off = 0; off < s.len; off += CHUNK) {
+        const m = Math.min(CHUNK, s.len - off);
+        for (let k = 0; k < m; k++) {
+          let v = a[off + k]; v = v > 1 ? 1 : v < -1 ? -1 : v; L[k] = v < 0 ? v * 32768 : v * 32767;
+        }
+        if (outCh === 2) for (let k = 0; k < m; k++) {
+          let v = b[off + k]; v = v > 1 ? 1 : v < -1 ? -1 : v; R[k] = v < 0 ? v * 32768 : v * 32767;
+        }
+        if (enc) {
+          const out = outCh === 2 ? enc.encodeBuffer(L.subarray(0, m), R.subarray(0, m)) : enc.encodeBuffer(L.subarray(0, m));
+          if (out.length) parts.push(new Uint8Array(out.buffer, out.byteOffset, out.length).slice());
+        } else {
+          const pcm = new Int16Array(m * outCh);
+          if (outCh === 2) for (let k = 0; k < m; k++) { pcm[2 * k] = L[k]; pcm[2 * k + 1] = R[k]; }
+          else pcm.set(L.subarray(0, m));
+          parts.push(new Uint8Array(pcm.buffer));
+        }
+        done += m;
+        if (performance.now() - lastYield > 40) {
+          setProgress(0.35 + 0.65 * done / totalFrames, `${label}… ${Math.floor(100 * done / totalFrames)}%`);
+          await yieldToUI();
+          checkCancel();
+          lastYield = performance.now();
+        }
+      }
+    }
+    if (enc) { const out = enc.flush(); if (out.length) parts.push(new Uint8Array(out.buffer, out.byteOffset, out.length).slice()); }
+
+    const blob = new Blob(parts, { type: MIME[f.ext] });
+    const seconds = totalFrames / rate;
+    result = {
+      blob, url: URL.createObjectURL(blob), ext: f.ext, seconds,
+      listText: listText(list),
+      took: (performance.now() - t0) / 1000,
+    };
+    setProgress(1, `Built ${fmtTime(seconds)} of audio in ${Math.max(1, Math.round(result.took))} s.`);
+    el.status.dataset.sticky = '1';
+    renderResult();
+    chime();
+  } catch (err) {
+    setProgress(0);
+    el.status.dataset.sticky = '1';
+    if (err instanceof Cancelled) {
+      el.status.textContent = 'Build cancelled.';
+    } else if (err instanceof BuildError) {
+      el.status.textContent = 'Build stopped.';
+      showError(err.message, err.trackId);
+    } else if (err instanceof RangeError || (err && /memory|allocation/i.test(String(err.message)))) {
+      el.status.textContent = 'Build stopped.';
+      showError('The browser ran out of memory for this much audio. Choose MP3 · 64 kbps, which uses about half the memory, or build from fewer or shorter tracks.');
+    } else {
+      el.status.textContent = 'Build stopped.';
+      showError('Something went wrong while building: ' + (err && err.message ? err.message : String(err)));
+    }
+  } finally {
+    lock(false);
+    render();
+  }
+}
+
+el.buildBtn.onclick = () => {
+  if (building) { cancelRequested = true; el.status.textContent = 'Cancelling…'; return; }
+  build();
+};
+
+function chime() {
+  try {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    const ac = new AC();
+    const t = ac.currentTime + 0.02;
+    [880, 1318.5].forEach((hz, i) => {
+      const o = ac.createOscillator(), g = ac.createGain(), at = t + i * 0.13;
+      o.type = 'sine'; o.frequency.value = hz;
+      g.gain.setValueAtTime(0.0001, at);
+      g.gain.exponentialRampToValueAtTime(0.12, at + 0.015);
+      g.gain.exponentialRampToValueAtTime(0.0001, at + 0.5);
+      o.connect(g); g.connect(ac.destination);
+      o.start(at); o.stop(at + 0.55);
+    });
+    setTimeout(() => ac.close(), 1200);
+  } catch { /* sound is optional */ }
+}
+
+// ---------------------------------------------------------------- result + download
+// Inside a Claude artifact the page can't start downloads itself; the viewer's `downloads`
+// capability saves files instead, and only accepts some extensions, so audio goes in a .zip.
+const downloadsCap = (window.claude && typeof window.claude.use === 'function')
+  ? window.claude.use('downloads').catch(() => null)
+  : Promise.resolve(null);
+let dlCap = null;
+downloadsCap.then(c => { dlCap = c; if (result) renderResult(); });
+
+function invalidateResult() {
+  if (!result) return;
+  URL.revokeObjectURL(result.url);
+  result = null;
+  el.resultAudio.removeAttribute('src');
+  el.result.hidden = true;
+  delete el.status.dataset.sticky;
+  setProgress(0);
+}
+
+function renderResult() {
+  if (!result) { el.result.hidden = true; return; }
+  const base = fmtName();
+  el.result.hidden = false;
+  if (el.resultAudio.getAttribute('src') !== result.url) el.resultAudio.src = result.url;
+  el.resultMeta.textContent = `${base}${result.ext} · ${fmtTime(result.seconds)} · ${fmtSize(result.blob.size)}`;
+  if (dlCap) {
+    el.downloadBtn.textContent = `Download ${base}.zip`;
+    el.dlNote.textContent = `The zip holds ${base}${result.ext} and the track list. This viewer can't save audio files directly.`;
+    el.dlNote.hidden = false;
+    el.listBtn.hidden = true;
+  } else {
+    el.downloadBtn.textContent = `Download ${base}${result.ext}`;
+    el.dlNote.hidden = true;
+    el.listBtn.hidden = false;
+  }
+}
+
+function saveViaLink(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename; a.rel = 'noopener';
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
+}
+
+async function saveViaCapability(filename, data) {
+  try {
+    await dlCap.save({ filename, data });
+    el.status.textContent = `Saved ${filename}.`;
+  } catch (err) {
+    const code = err && err.code;
+    el.status.textContent = code === 'declined' ? 'Download cancelled.'
+      : code === 'rate_limited' ? 'A save prompt is already open.'
+      : code === 'too_large' ? 'The file is too large for this viewer to save. Open the page from its own address to download it.'
+      : "This viewer can't save files. Open the page from its own address to download it.";
+  }
+}
+
+el.downloadBtn.onclick = async () => {
+  if (!result) return;
+  await downloadsCap;
+  const base = fmtName();
+  if (dlCap) {
+    const audio = new Uint8Array(await result.blob.arrayBuffer());
+    const zip = makeZip([
+      { name: base + result.ext, data: audio },
+      { name: base + ' - track list.txt', data: new TextEncoder().encode(result.listText) },
+    ]);
+    await saveViaCapability(base + '.zip', zip);
+  } else {
+    saveViaLink(result.blob, base + result.ext);
+  }
+};
+el.listBtn.onclick = () => {
+  if (result) saveViaLink(new Blob([result.listText], { type: 'text/plain;charset=utf-8' }), fmtName() + '.txt');
+};
+
+// Minimal ZIP writer (stored, no compression; MP3 doesn't compress anyway).
+const CRC_TABLE = (() => {
+  const t = new Uint32Array(256);
+  for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; }
+  return t;
+})();
+function crc32(u8) {
+  let c = 0xFFFFFFFF;
+  for (let i = 0; i < u8.length; i++) c = CRC_TABLE[(c ^ u8[i]) & 255] ^ (c >>> 8);
+  return (c ^ 0xFFFFFFFF) >>> 0;
+}
+function makeZip(entries) {
+  const enc = new TextEncoder(), parts = [], central = [];
+  const d = new Date();
+  const time = (d.getHours() << 11) | (d.getMinutes() << 5) | (d.getSeconds() >> 1);
+  const date = ((d.getFullYear() - 1980) << 9) | ((d.getMonth() + 1) << 5) | d.getDate();
+  let offset = 0;
+  for (const e of entries) {
+    const name = enc.encode(e.name), crc = crc32(e.data), size = e.data.length;
+    const lh = new DataView(new ArrayBuffer(30));
+    lh.setUint32(0, 0x04034b50, true); lh.setUint16(4, 20, true); lh.setUint16(6, 0x0800, true); lh.setUint16(8, 0, true);
+    lh.setUint16(10, time, true); lh.setUint16(12, date, true); lh.setUint32(14, crc, true);
+    lh.setUint32(18, size, true); lh.setUint32(22, size, true); lh.setUint16(26, name.length, true); lh.setUint16(28, 0, true);
+    parts.push(lh.buffer, name, e.data);
+    const ch = new DataView(new ArrayBuffer(46));
+    ch.setUint32(0, 0x02014b50, true); ch.setUint16(4, 20, true); ch.setUint16(6, 20, true); ch.setUint16(8, 0x0800, true);
+    ch.setUint16(10, 0, true); ch.setUint16(12, time, true); ch.setUint16(14, date, true); ch.setUint32(16, crc, true);
+    ch.setUint32(20, size, true); ch.setUint32(24, size, true); ch.setUint16(28, name.length, true);
+    ch.setUint32(42, offset, true);
+    central.push(ch.buffer, name);
+    offset += 30 + name.length + size;
+  }
+  const cdSize = central.reduce((a, p) => a + p.byteLength, 0);
+  const end = new DataView(new ArrayBuffer(22));
+  end.setUint32(0, 0x06054b50, true); end.setUint16(8, entries.length, true); end.setUint16(10, entries.length, true);
+  end.setUint32(12, cdSize, true); end.setUint32(16, offset, true);
+  return new Blob([...parts, ...central, end.buffer], { type: 'application/zip' });
+}
+
+window.addEventListener('beforeunload', e => { if (building) { e.preventDefault(); e.returnValue = ''; } });
+
+// ---------------------------------------------------------------- start
+const savedFormat = storageGet('interapp.format');
+if (savedFormat && FORMATS[savedFormat]) el.format.value = savedFormat;
+const savedName = storageGet('interapp.name');
+if (savedName) el.outName.value = savedName;
+if (typeof lamejs === 'undefined') {
+  [...el.format.options].forEach(o => { if (o.value.startsWith('mp3')) o.disabled = true; });
+  el.format.value = 'wav';
+  showNotice("The MP3 encoder couldn't load (no internet connection?), so only WAV is available.");
+}
+render();
+
+try {
+  store.load().then(recs => {
+    if (!recs.length || tracks.length) return;
+    pendingRestore = recs;
+    const total = recs.reduce((a, r) => a + (r.file ? r.size || 0 : 0), 0);
+    const noAudio = recs.filter(r => !r.file).length;
+    el.restoreText.textContent = `Your last list (${recs.length} ${plural(recs.length, 'track', 'tracks')}${total ? ', ' + fmtSize(total) : ''}) is saved in this browser`
+      + (noAudio ? `; ${noAudio} of them will need their folder added again` : '') + '. Restore it? Adding new files discards it.';
+    el.restoreBar.hidden = false;
+  }).catch(() => enqueueStore(() => Promise.reject()));
+} catch {
+  enqueueStore(() => Promise.reject());
+}
+})();
+</script>
+</body>
+</html>
