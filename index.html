@@ -1381,7 +1381,7 @@ function renderMissing() {
 // short path; the page then reads the files through it and still saves their real full paths.
 const tooLong = p => /^[A-Za-z]:[\\/]/.test(p) && p.length >= 260;
 function longPathNote(paths) {
-  const k = paths.length, dir = commonDir(paths);
+  const k = paths.length, dir = commonDir(paths).replace(/\//g, '\\');  // mklink wants backslashes
   const name = dir ? baseName(dir) : 'Music';
   return `${k} ${plural(k, 'path is', 'paths are')} 260 or more characters long, which this browser can't open. `
     + `Give ${plural(k, 'its', 'their')} folder a short path: in Command Prompt run  mkdir C:\\s & mklink /J "C:\\s\\${name}" "${dir || 'C:\\…\\' + name}"  `
