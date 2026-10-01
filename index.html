@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Interapp Audio Merger</title>
+<script>try{var t=localStorage.getItem('interapp.theme');if(t==='light'||t==='dark')document.documentElement.dataset.theme=t}catch(e){}</script>
 <meta name="description" content="Merge audio files in the browser: the first track plays, every middle track plays at the same time, then the last track plays.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -62,7 +63,10 @@ button,input,select{font:inherit;color:inherit}
 
 /* ---------- header + arrangement ---------- */
 .top{display:grid;gap:16px}
-.brand{display:grid;gap:6px}
+.head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+.brand{display:grid;gap:6px;min-width:0}
+.theme-btn{flex:none;width:34px;height:34px;min-height:0}
+.theme-btn svg{width:16px;height:16px}
 h1{margin:0;font:800 clamp(30px,4.2vw,42px)/1 var(--font-display);letter-spacing:-.025em;text-wrap:balance}
 .lede{margin:0;max-width:66ch;color:var(--muted)}
 .lede b{font-weight:600}
@@ -122,9 +126,12 @@ h1{margin:0;font:800 clamp(30px,4.2vw,42px)/1 var(--font-display);letter-spacing
 .btn.danger:hover:not(:disabled){background:var(--danger);filter:brightness(1.08)}
 
 .bar-note{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;padding:10px 12px;border-bottom:1px solid var(--line);background:var(--sunken);font-size:14px}
-.bar-note p{margin:0;flex:1 1 240px;min-width:0}
+.bar-note p{margin:0;flex:1 1 240px;min-width:0;overflow-wrap:anywhere}
 .bar-note.warn{background:var(--danger-soft)}
 .bar-note .actions{display:flex;gap:6px}
+.path-form{display:flex;flex-wrap:wrap;gap:6px;flex:1 1 100%;margin:0}
+.path-form input{flex:1 1 260px;min-width:0;min-height:36px;padding:6px 10px;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--surface);font:13px var(--font-mono)}
+.bar-note .path-err{flex:1 1 100%;color:var(--danger);font-size:13px}
 
 .list{list-style:none;margin:0;padding:0;max-height:min(62vh,640px);overflow:auto;overscroll-behavior:contain}
 .list:focus{outline:none}
@@ -194,8 +201,11 @@ select{width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:va
 
 footer{display:flex;flex-wrap:wrap;gap:4px 18px;font-size:12.5px;color:var(--muted)}
 footer p{margin:0}
-footer:not(:has(p:not(:empty))){display:none}
-footer a{color:inherit}
+footer:not(:has(#backupNote:not(:empty), #rootsBox:not([hidden]))){display:none}
+.roots{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 12px;margin:0;padding:0;list-style:none}
+.roots li{display:inline-flex;align-items:baseline;gap:6px;min-width:0}
+.roots code{font:12px var(--font-mono);color:var(--ink);overflow-wrap:anywhere}
+.link-btn{padding:0;border:0;background:none;color:var(--accent);font-size:12.5px;text-decoration:underline;cursor:pointer}
 
 .drop-overlay{position:fixed;inset:0;z-index:20;display:grid;place-items:center;padding:24px;background:var(--bg);background:color-mix(in srgb,var(--bg) 82%,transparent)}
 .drop-overlay div{padding:28px 36px;border:2px dashed var(--accent);border-radius:var(--radius);background:var(--surface);font:700 20px/1.3 var(--font-display);color:var(--accent);text-align:center;pointer-events:none}
@@ -213,9 +223,12 @@ footer a{color:inherit}
 <body>
 <div class="app">
   <header class="top">
-    <div class="brand">
-      <h1>Interapp</h1>
-      <p class="lede">Joins audio files into one: the <b class="t-start">first</b> track plays alone, every <b class="t-mix">middle</b> track plays at the same time, then the <b class="t-end">last</b> track plays alone.</p>
+    <div class="head">
+      <div class="brand">
+        <h1>Interapp</h1>
+        <p class="lede">Joins audio files into one: the <b class="t-start">first</b> track plays alone, every <b class="t-mix">middle</b> track plays at the same time, then the <b class="t-end">last</b> track plays alone.</p>
+      </div>
+      <button type="button" class="btn icon theme-btn" id="themeBtn"></button>
     </div>
     <section class="arrangement" aria-label="Arrangement of the output file">
       <div class="lane" id="lane" aria-hidden="true">
@@ -233,7 +246,7 @@ footer a{color:inherit}
         <div class="group">
           <button type="button" class="btn primary" id="addFilesBtn">Add files</button>
           <button type="button" class="btn" id="addFolderBtn">Add folder</button>
-          <button type="button" class="btn" id="loadListBtn" title="Open a backup list (.txt), then add the folder that holds its audio">Load list</button>
+          <button type="button" class="btn" id="loadListBtn" title="Open a saved list of file paths (.txt)">Load list</button>
           <input type="file" id="fileInput" multiple accept=".mp3,.wav,.ogg,.flac,.m4a,.aac,.txt,audio/*,text/plain" hidden>
           <input type="file" id="folderInput" multiple webkitdirectory hidden>
           <input type="file" id="listInput" accept=".txt,text/plain" hidden>
@@ -255,7 +268,7 @@ footer a{color:inherit}
         </div>
         <div class="group push">
           <span class="count" id="countLabel" aria-live="polite">0 tracks</span>
-          <button type="button" class="btn" id="saveListBtn" title="Download the list as backup.txt, one path per line">Save list</button>
+          <button type="button" class="btn" id="saveListBtn" title="Download the list as backup.txt, one full path per line">Save list</button>
           <button type="button" class="btn ghost" id="clearBtn">Clear</button>
         </div>
       </div>
@@ -281,13 +294,26 @@ footer a{color:inherit}
           <button type="button" class="btn" id="missingRemoveBtn">Remove missing</button>
         </div>
       </div>
+      <div class="bar-note" id="pathBar" hidden>
+        <p id="pathText"></p>
+        <div class="actions" id="pathActions">
+          <button type="button" class="btn primary" id="pathPickBtn">Choose folder…</button>
+          <button type="button" class="btn" id="pathLaterBtn">Not now</button>
+        </div>
+        <form class="path-form" id="pathForm" hidden>
+          <input id="pathInput" type="text" spellcheck="false" autocomplete="off" aria-label="Full path of the folder">
+          <button type="submit" class="btn primary">Save</button>
+          <button type="button" class="btn" id="pathCancelBtn">Not now</button>
+        </form>
+        <p class="path-err" id="pathErr" role="alert" hidden></p>
+      </div>
       <div class="bar-note" id="notice" hidden><p id="noticeText"></p><div class="actions"><button type="button" class="btn primary" id="noticeAction" hidden></button><button type="button" class="btn ghost" id="noticeClose">OK</button></div></div>
 
       <ol class="list" id="list" tabindex="0" role="listbox" aria-multiselectable="true" aria-label="Tracks in build order" hidden></ol>
 
       <div class="empty" id="empty">
         <h2>Drop audio files here</h2>
-        <p>MP3, WAV, OGG, FLAC, M4A or AAC. Drop a whole folder to add everything in it, sorted by name. To reopen a saved list, drop its .txt together with the folder that holds the audio.</p>
+        <p>MP3, WAV, OGG, FLAC, M4A or AAC. Drop a whole folder to add everything in it, sorted by name. To reopen a saved list, drop its .txt here.</p>
         <div class="group">
           <button type="button" class="btn primary" id="emptyAddBtn">Choose files</button>
           <button type="button" class="btn" id="sampleBtn">Try with sample tones</button>
@@ -325,18 +351,18 @@ footer a{color:inherit}
         <audio id="resultAudio" controls preload="metadata"></audio>
         <p class="meta" id="resultMeta"></p>
         <button type="button" class="btn primary" id="downloadBtn">Download</button>
-        <button type="button" class="btn" id="listBtn">Download track list (.txt)</button>
         <p class="dl-note" id="dlNote" hidden></p>
       </div>
     </aside>
   </main>
 
   <footer>
+    <ul class="roots" id="rootsBox" aria-label="Linked folders" hidden></ul>
     <p id="backupNote"></p>
   </footer>
 </div>
 
-<div class="drop-overlay" id="dropOverlay" hidden><div>Drop audio files or folders to add them</div></div>
+<div class="drop-overlay" id="dropOverlay" hidden><div>Drop audio files, folders or a saved list</div></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/lamejs/1.2.1/lame.min.js"></script>
 <script>
@@ -366,11 +392,14 @@ const el = {};
  'restoreBar','restoreText','restoreBtn','discardBtn','clearBar','clearText','clearYes','clearNo',
  'notice','noticeText','noticeClose','noticeAction','missingBar','missingText','missingAddBtn','missingRemoveBtn',
  'loadListBtn','listInput','saveListBtn','outName','extLabel','format','sumLength','sumTracks','sumSize',
- 'buildBtn','progress','bar','status','error','result','resultAudio','resultMeta','downloadBtn','listBtn','dlNote',
- 'backupNote','dropOverlay'].forEach(id => { el[id] = $(id); });
+ 'pathBar','pathText','pathActions','pathPickBtn','pathLaterBtn','pathForm','pathInput','pathCancelBtn','pathErr',
+ 'buildBtn','progress','bar','status','error','result','resultAudio','resultMeta','downloadBtn','dlNote',
+ 'backupNote','rootsBox','dropOverlay','themeBtn'].forEach(id => { el[id] = $(id); });
 
 // ---------------------------------------------------------------- state
-let tracks = [];            // {id, file (null = missing), name, path, listPath, size, lastModified, duration}
+// listPath is the path a saved list writes: the full path when it's known. handle and top are the
+// file's handle and the folder it was dropped or picked in, where the browser gives them.
+let tracks = [];            // {id, file (null = missing), name, path, listPath, size, lastModified, duration, handle, top}
 let selected = new Set();
 let anchorId = null;        // shift-click anchor
 let cursorId = null;        // keyboard cursor
@@ -378,7 +407,7 @@ let errorId = null;
 let playingId = null;
 let building = false;
 let cancelRequested = false;
-let result = null;          // {blob, url, filename, listText, seconds}
+let result = null;          // {blob, url, ext, seconds, list, took}
 let pendingRestore = null;  // saved records waiting for Restore / Discard
 let dragIds = null;         // ids being reordered by drag
 let idSeq = 0;
@@ -407,10 +436,11 @@ function storageGet(k) { try { return localStorage.getItem(k); } catch { return 
 function storageSet(k, v) { try { localStorage.setItem(k, v); } catch { /* per-viewer convenience only */ } }
 
 // ---------------------------------------------------------------- backup (IndexedDB)
-// The desktop app kept backup.txt with file paths. A browser can't reopen paths, so the
-// list and the audio itself are kept in IndexedDB on this device, written on every change.
+// Besides the .txt lists, the list and the audio itself are kept in IndexedDB on this device,
+// written on every change, so a crash or reload doesn't depend on reading the folders again.
 // The list metadata and the audio are stored separately: if there's no room for the audio,
-// the list still survives and its rows come back as "missing" until the folder is added again.
+// the list still survives and its rows come back as "missing" until the audio is found again.
+// The linked folders (see below) are kept in the same database.
 const store = (() => {
   let dbp = null;
   function open() {
@@ -442,7 +472,7 @@ const store = (() => {
     });
   }
   const req2p = r => new Promise((res, rej) => { r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); });
-  const meta = t => ({ id: t.id, name: t.name, path: t.path, listPath: t.listPath || '', size: t.size, lastModified: t.lastModified });
+  const meta = t => ({ id: t.id, name: t.name, path: t.path, listPath: t.listPath || '', size: t.size, lastModified: t.lastModified, handle: t.handle || null });
   const api = {
     putMeta: list => tx(['tracks'], 'readwrite', t => list.forEach(x => t.objectStore('tracks').put(meta(x)))),
     async put(list) {
@@ -452,7 +482,13 @@ const store = (() => {
     },
     del: ids => tx(['tracks', 'blobs'], 'readwrite', t => ids.forEach(id => { t.objectStore('tracks').delete(id); t.objectStore('blobs').delete(id); })),
     order: ids => tx(['meta'], 'readwrite', t => t.objectStore('meta').put(ids, 'order')),
-    clear: () => tx(['tracks', 'blobs', 'meta'], 'readwrite', t => ['tracks', 'blobs', 'meta'].forEach(n => t.objectStore(n).clear())),
+    clear: () => tx(['tracks', 'blobs', 'meta'], 'readwrite', t => {
+      t.objectStore('tracks').clear();
+      t.objectStore('blobs').clear();
+      t.objectStore('meta').delete('order');
+    }),
+    getRoots: async () => req2p((await open()).transaction(['meta'], 'readonly').objectStore('meta').get('roots')),
+    setRoots: list => tx(['meta'], 'readwrite', t => t.objectStore('meta').put(list, 'roots')),
     async load() {
       const db = await open();
       const t = db.transaction(['tracks', 'blobs', 'meta'], 'readonly');
@@ -556,6 +592,311 @@ function nameCounts(paths) {
   return m;
 }
 
+// ---------------------------------------------------------------- linked folders
+// Lists hold full paths, as in the desktop app. A page is never told where a file is and can't
+// open a path by itself, but Chrome and Edge let it keep a handle to a folder the user chose or
+// dropped. A linked folder pairs such a handle with the folder's full path: every file inside it
+// then has a known full path, and the tracks of a list can be read straight from disk. After a
+// restart the browser may ask once to allow reading a linked folder again.
+const FSA = typeof window.showDirectoryPicker === 'function';
+let fsaBlocked = false;     // set when pickers throw, as they do in sandboxed frames
+const canLink = () => FSA && !fsaBlocked;
+let roots = [];             // {path, parts, handle, state: 'granted' | 'prompt' | 'denied'}
+let askDir = null;          // folder chosen from the path bar whose full path is being asked for
+let pathDir = null;         // folder the path bar shows
+let pathSnoozed = new Set(); // track ids the path bar was dismissed for
+
+const isAbs = p => /^([A-Za-z]:[\\/]|\\\\|\/)/.test(p);
+const cleanPath = raw => String(raw).trim().replace(/^"(.*)"$/, '$1').trim().replace(/([^:\\/])[\\/]+$/, '$1');
+function segEnds(p) {
+  const out = [], re = /[^\\/]+/g;
+  for (let m; (m = re.exec(p));) if (m[0] !== '.') out.push({ name: m[0], end: m.index + m[0].length });
+  return out;
+}
+function joinPath(base, segs) {
+  if (!segs.length) return base;
+  const sep = /^[A-Za-z]:|\\/.test(base) ? '\\' : '/';
+  return base.replace(/[\\/]+$/, '') + sep + segs.join(sep);
+}
+// The folder that holds all of these paths, if they share more than a drive.
+function commonDir(paths) {
+  const abs = paths.filter(isAbs);
+  if (!abs.length) return '';
+  const first = pathParts(abs[0]);
+  let n = first.length - 1;
+  for (const p of abs) {
+    const parts = pathParts(p);
+    let i = 0;
+    while (i < n && i < parts.length - 1 && parts[i] === first[i]) i++;
+    n = i;
+  }
+  return n > 1 ? abs[0].slice(0, segEnds(abs[0])[n - 1].end) : '';
+}
+function rootFor(p) {
+  if (!isAbs(p)) return null;
+  const parts = pathParts(p);
+  let best = null;
+  for (const r of roots) {
+    if (r.parts.length < parts.length && r.parts.every((s, i) => s === parts[i]) && (!best || r.parts.length > best.parts.length)) best = r;
+  }
+  return best;
+}
+async function permission(handle, ask) {
+  try {
+    let s = await handle.queryPermission({ mode: 'read' });
+    if (s === 'prompt' && ask) s = await handle.requestPermission({ mode: 'read' });
+    return s;
+  } catch { return 'prompt'; }   // asking needs a click
+}
+const rootsReady = (async () => {
+  if (!FSA) return;
+  try {
+    const saved = await store.getRoots();
+    roots = (saved || []).filter(r => r && r.handle && r.path).map(r => ({ path: r.path, parts: pathParts(r.path), handle: r.handle, state: 'prompt' }));
+    await Promise.all(roots.map(async r => { r.state = await permission(r.handle, false); }));
+  } catch { /* linking is optional */ }
+  renderRoots();
+  render();
+})();
+function saveRoots() {
+  store.setRoots(roots.map(r => ({ path: r.path, handle: r.handle }))).catch(() => {});
+}
+async function addRoot(path, handle) {
+  const key = pathParts(path).join('/'), keep = [];
+  for (const r of roots) {
+    if (r.parts.join('/') === key || await r.handle.isSameEntry(handle).catch(() => false)) continue;
+    keep.push(r);
+  }
+  roots = [...keep, { path, parts: pathParts(path), handle, state: 'granted' }];
+  saveRoots();
+  renderRoots();
+  return resolveTracks();
+}
+function unlinkRoot(r) {
+  roots = roots.filter(x => x !== r);
+  saveRoots();
+  renderRoots();
+  render();
+}
+
+// Where a dropped or picked file or folder is: inside a linked folder, or holding one.
+async function pathOfHandle(h) {
+  for (const r of roots) {
+    const segs = await r.handle.resolve(h).catch(() => null);
+    if (segs) return joinPath(r.path, segs);
+  }
+  if (h.kind !== 'directory') return null;
+  for (const r of roots) {
+    const segs = await h.resolve(r.handle).catch(() => null);
+    const s = segEnds(r.path);
+    if (segs && segs.length < s.length) return r.path.slice(0, s[s.length - 1 - segs.length].end);
+  }
+  return null;
+}
+
+// Finds a file below a folder. Names are tried as written, then without regard to case, since a
+// list's paths don't always match the case on disk.
+async function fileAt(dir, segs, cache) {
+  let key = '';
+  for (let i = 0; i < segs.length; i++) {
+    const k = key + '/' + normPart(segs[i]);
+    if (!cache.has(k)) cache.set(k, await childOf(dir, segs[i], i === segs.length - 1 ? 'file' : 'directory', cache, key));
+    dir = cache.get(k);
+    if (!dir) return null;
+    key = k;
+  }
+  return dir;
+}
+async function childOf(dir, name, kind, cache, key) {
+  try { return await (kind === 'file' ? dir.getFileHandle(name) : dir.getDirectoryHandle(name)); } catch { /* compare below */ }
+  let names = cache.get(key + '|');
+  if (!names) {
+    names = new Map();
+    try { for await (const h of dir.values()) names.set(h.kind + ':' + normPart(h.name), h); } catch { /* unreadable */ }
+    cache.set(key + '|', names);
+  }
+  return names.get(kind + ':' + normPart(name)) || null;
+}
+
+// A folder's handle carries only its name. To learn where the folder is, look for that name in
+// a list's full paths and check that the files below it are really there.
+async function inferRoot(dir, paths) {
+  const want = normPart(dir.name), cands = new Map();
+  for (const p of paths) {
+    if (!isAbs(p)) continue;
+    const segs = segEnds(p);
+    for (let i = 0; i < segs.length - 1; i++) {
+      if (normPart(segs[i].name) !== want) continue;
+      const base = p.slice(0, segs[i].end), parts = pathParts(base);
+      if (!cands.has(parts.join('/'))) cands.set(parts.join('/'), { base, parts, hits: 0 });
+    }
+  }
+  let best = null;
+  const cache = new Map();
+  for (const c of cands.values()) {
+    for (const p of paths) {
+      const parts = isAbs(p) ? pathParts(p) : [];
+      if (parts.length <= c.parts.length || !c.parts.every((s, i) => s === parts[i])) continue;
+      if (await fileAt(dir, splitPath(p).slice(c.parts.length), cache)) c.hits++;
+    }
+    if (c.hits && (!best || c.hits > best.hits)) best = c;
+  }
+  return best ? best.base : null;
+}
+
+// Works out the full path of added files that came with a handle: from the linked folders or,
+// for a dropped folder whose name appears in the given full paths, by linking that folder.
+async function locate(items, hints) {
+  if (!items.some(it => it.handle)) return;
+  await rootsReady;
+  const tops = new Map();
+  for (const it of items) if (it.top && !tops.has(it.top)) tops.set(it.top, null);
+  for (const top of tops.keys()) {
+    let p = await pathOfHandle(top);
+    if (!p && hints.length && (p = await inferRoot(top, hints))) await addRoot(p, top);
+    tops.set(top, p);
+  }
+  for (const it of items) {
+    if (!it.handle) continue;
+    const base = it.top && tops.get(it.top);
+    it.fullPath = it.top ? (base ? joinPath(base, splitPath(it.path).slice(1)) : '') : (await pathOfHandle(it.handle) || '');
+  }
+}
+
+// Tracks added with a handle whose full path isn't known yet.
+const unresolved = () => tracks.filter(t => t.file && t.handle && !isAbs(t.listPath));
+async function resolveTracks() {
+  const fixed = [];
+  for (const t of unresolved()) {
+    const p = await pathOfHandle(t.handle);
+    if (p) { t.listPath = p; fixed.push(t); }
+  }
+  if (fixed.length) {
+    enqueueStore(() => store.putMeta(fixed));
+    render();
+    if (result) renderResult();
+  }
+  return fixed.length;
+}
+
+// Loads tracks that have no audio yet from the linked folders their paths are in.
+async function fillFromRoots(list, ask) {
+  await rootsReady;
+  const groups = new Map();
+  for (const t of list) {
+    const r = t.file ? null : rootFor(shownPath(t));
+    if (r) groups.has(r) ? groups.get(r).push(t) : groups.set(r, [t]);
+  }
+  const filled = [];
+  for (const [r, ts] of groups) {
+    if (r.state !== 'granted') r.state = await permission(r.handle, ask);
+    if (r.state !== 'granted') continue;
+    const cache = new Map();
+    for (const t of ts) {
+      const p = shownPath(t);
+      const h = await fileAt(r.handle, splitPath(p).slice(r.parts.length), cache);
+      const f = h && await h.getFile().catch(() => null);
+      if (!f) continue;
+      Object.assign(t, { file: f, name: f.name, path: p, listPath: p, size: f.size, lastModified: f.lastModified, duration: undefined, handle: h });
+      filled.push(t);
+    }
+  }
+  return filled;
+}
+async function loadFromRoots(ask) {
+  const filled = (await fillFromRoots(tracks, ask)).filter(t => tracks.includes(t));
+  if (filled.length) {
+    enqueueStore(() => store.put(filled));
+    filled.forEach(t => queueProbe(t));
+    askPersist();
+  }
+  render();
+  return filled.length;
+}
+// Linked folders that hold missing tracks but need a click to be read again.
+const accessNeeded = () => roots.filter(r => r.state === 'prompt' && tracks.some(t => !t.file && rootFor(shownPath(t)) === r));
+
+async function allowAccess() {
+  const locked = accessNeeded();
+  const n = await loadFromRoots(true);
+  const still = tracks.filter(t => !t.file).length;
+  if (n) showNotice(`Loaded ${n} ${plural(n, 'track', 'tracks')}${still ? `; ${still} still missing` : ''}.`);
+  else if (locked.some(r => r.state === 'granted')) showNotice(`None of the missing tracks were found in ${locked.map(r => r.path).join(', ')}.`);
+}
+
+async function chooseFolderForMissing() {
+  const dir = await pick('showDirectoryPicker', {});
+  if (dir === undefined) { el.folderInput.click(); return; }
+  if (!dir || building || tracks.every(t => t.file)) return;
+  const path = await pathOfHandle(dir) || await inferRoot(dir, tracks.filter(t => !t.file).map(shownPath));
+  if (path) {
+    await addRoot(path, dir);
+    const n = await loadFromRoots(false);
+    if (n) {
+      const still = tracks.filter(t => !t.file).length;
+      showNotice(`Linked ${path}: found ${n} missing ${plural(n, 'track', 'tracks')}${still ? `; ${still} still missing` : ''}.`);
+      return;
+    }
+  }
+  // The folder's name isn't in the missing paths (a list from another computer, or a renamed
+  // folder), so its files are matched by name and enclosing folders instead.
+  const out = [];
+  try { await walkHandle(dir, '', false, null, out); } catch { showNotice(`Couldn't read the folder “${dir.name}”.`); return; }
+  handleIncoming(out);
+}
+
+function renderPathBar() {
+  const list = canLink() ? unresolved() : [];
+  if (!list.some(t => !pathSnoozed.has(t.id))) {
+    el.pathBar.hidden = true;
+    askDir = pathDir = null;
+    return;
+  }
+  const dir = askDir || (list.find(t => t.top) || {}).top || null;
+  const k = list.length;
+  el.pathBar.hidden = false;
+  el.pathActions.hidden = !!dir;
+  el.pathForm.hidden = !dir;
+  if (dir !== pathDir) {
+    pathDir = dir;
+    el.pathInput.value = '';
+    el.pathErr.hidden = true;
+    if (dir) el.pathInput.placeholder = `C:\\…\\${dir.name}`;
+  }
+  el.pathText.textContent = dir
+    ? `Where is the folder “${dir.name}” on this computer? Saved lists hold each track's full path, so paste the folder's path once. In File Explorer, select the folder and press Ctrl+Shift+C to copy it.`
+    : `${k} ${plural(k, 'track was', 'tracks were')} added without ${plural(k, 'its', 'their')} folder, so a saved list can't find ${plural(k, 'it', 'them')} again. Choose the folder ${plural(k, 'it is', 'they are')} in, or a folder above it.`;
+}
+
+function renderRoots() {
+  el.rootsBox.hidden = !roots.length;
+  const label = document.createElement('li');
+  label.textContent = roots.length === 1 ? 'Linked folder:' : 'Linked folders:';
+  el.rootsBox.replaceChildren(label, ...roots.map(r => {
+    const li = document.createElement('li');
+    const code = document.createElement('code');
+    code.textContent = r.path;
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'link-btn';
+    b.textContent = 'Unlink';
+    b.title = `Stop reading audio from ${r.path}`;
+    b.onclick = () => unlinkRoot(r);
+    li.append(code, b);
+    return li;
+  }));
+}
+
+// Lines without a full path can only be found again by adding their folder with the list.
+function relativeNote(list) {
+  const k = list.filter(t => !isAbs(shownPath(t))).length;
+  if (!k) return '';
+  return canLink()
+    ? `${k} ${plural(k, 'track has', 'tracks have')} no full path in the list, so it can't load ${plural(k, 'it', 'them')} by itself.`
+      + (unresolved().length ? ` Link the folder ${plural(k, 'it is', 'they are')} in to fix that.` : '')
+    : `This browser doesn't tell pages where files are, so ${k} ${plural(k, 'track is', 'tracks are')} listed by folder and file name only. Chrome and Edge can save full paths.`;
+}
+
 // ---------------------------------------------------------------- adding tracks
 function showNotice(text, action) {
   el.noticeText.textContent = text || '';
@@ -565,16 +906,18 @@ function showNotice(text, action) {
   el.noticeAction.onclick = action ? () => { showNotice(''); action.fn(); } : null;
 }
 const plural = (n, one, many) => n === 1 ? one : many;
-const makeTrack = (file, path, listPath) => ({
+const makeTrack = (file, path, listPath, from) => ({
   id: newId(), file, name: file ? file.name : baseName(path), path, listPath: listPath || '',
   size: file ? file.size : 0, lastModified: file ? file.lastModified : 0, duration: file ? file.__duration : undefined,
+  handle: (from && from.handle) || null, top: (from && from.top) || null,
 });
 
-// items: [{file, path, inFolder}] from a drop or a file picker
-function handleIncoming(items) {
-  if (building || !items.length) return;
+// items: [{file, path, inFolder, handle?, top?}] from a drop or a picker
+async function handleIncoming(items) {
+  if (building) return;
   clearError();
   resetStatus();
+  if (!items.length) { showNotice('No audio files were found in what you added.'); return; }
   const lists = items.filter(it => !it.inFolder && extOf(it.file.name) === 'txt');
   const audio = items.filter(it => AUDIO_EXT.has(extOf(it.file.name)));
   const strays = items.filter(it => !it.inFolder && !lists.includes(it) && !audio.includes(it)).length;
@@ -582,10 +925,12 @@ function handleIncoming(items) {
   if (strays) notes.push(`Skipped ${strays} ${plural(strays, "file that isn't", "files that aren't")} audio (MP3, WAV, OGG, FLAC, M4A, AAC) or a list (.txt).`);
   if (lists.length) {
     if (lists.length > 1) notes.push(`Only one list can be loaded at a time, so ${lists[0].file.name} was used.`);
-    importList(lists[0].file, audio, notes);
+    await importList(lists[0].file, audio, notes);
     return;
   }
   if (!audio.length) { showNotice(notes.join(' ') || 'No audio files were found in what you added.'); return; }
+  await locate(audio, tracks.filter(t => !t.file).map(shownPath));
+  if (building) return;
   dropPendingRestore();
   if (tracks.some(t => !t.file)) {
     // While some tracks are missing, files fill those gaps first. Files from inside a dropped
@@ -613,11 +958,11 @@ function addAudio(items, notes) {
   let dupes = 0;
   const fresh = [];
   items.sort((a, b) => collator.compare(a.path, b.path));
-  for (const { file, path } of items) {
-    const key = path + '|' + file.size + '|' + file.lastModified;
+  for (const it of items) {
+    const key = it.path + '|' + it.file.size + '|' + it.file.lastModified;
     if (have.has(key)) { dupes++; continue; }
     have.add(key);
-    fresh.push(makeTrack(file, path));
+    fresh.push(makeTrack(it.file, it.path, it.fullPath, it));
   }
   if (dupes) notes.push(`${dupes} ${plural(dupes, 'file was', 'files were')} already in the list.`);
   showNotice(notes.join(' '));
@@ -663,6 +1008,8 @@ async function importList(file, audio, notes) {
     return;
   }
   if (building) return;
+  await locate(audio, lines);
+  if (building) return;
   dropPendingRestore();
   // Match against the files added with the list and the tracks already loaded.
   const pool = [
@@ -673,6 +1020,9 @@ async function importList(file, audio, notes) {
   const counts = nameCounts(lines);
   const used = new Set();
   let ambiguous = 0;
+  // A track keeps the full path it was found at. A file matched only by name and folder, in a
+  // folder whose place isn't known, gets none, so the path bar asks for that folder.
+  const keepPath = (t, line) => t.handle && isAbs(t.listPath) ? t.listPath : line;
   const next = lines.map(line => {
     const m = findMatch(index, pathParts(line), counts.get(normPart(baseName(line))) > 1, used);
     if (m.ambiguous) ambiguous++;
@@ -680,9 +1030,14 @@ async function importList(file, audio, notes) {
     if (!e) return makeTrack(null, line, line);
     const reuse = e.track && !used.has(e);
     used.add(e);
-    if (reuse) return { ...e.track, listPath: line };  // keeps its id, stored audio and length
-    return makeTrack(e.file, e.path, line);
+    if (reuse) return { ...e.track, listPath: keepPath(e.track, line) };  // keeps its id, stored audio and length
+    if (!e.item) return makeTrack(e.file, e.path, keepPath(e.track, line), e.track);
+    return makeTrack(e.file, e.path, e.item.fullPath || (e.item.handle ? '' : line), e.item);
   });
+  // The rest are read from the linked folders their paths are in. Asking to read a folder again
+  // needs a click, which a drop isn't; the missing-tracks bar asks then.
+  await fillFromRoots(next, !!(navigator.userActivation && navigator.userActivation.isActive));
+  if (building) return;
   const found = next.filter(t => t.file).length;
   // Added files that no line points to (tracks already loaded may have been reused instead).
   const droppedIndex = buildIndex(pool.filter(e => e.item));
@@ -736,9 +1091,9 @@ function fillMissing(items) {
     if (m.ambiguous) ambiguous++;
     if (!m.entry) continue;
     used.add(m.entry);
-    const f = m.entry.file;
-    Object.assign(t, { file: f, name: f.name, path: m.entry.path, size: f.size, lastModified: f.lastModified, duration: f.__duration });
-    if (!t.listPath) t.listPath = p;
+    const it = m.entry.item, f = it.file;
+    Object.assign(t, { file: f, name: f.name, path: m.entry.path, size: f.size, lastModified: f.lastModified, duration: f.__duration, handle: it.handle || null, top: it.top || null });
+    t.listPath = it.fullPath || (it.handle ? '' : p);  // as in importList
     filled.push(t);
   }
   if (filled.length) {
@@ -755,27 +1110,77 @@ const listText = list => list.map(shownPath).join('\n') + '\n';
 const fileItems = (list, inFolder) => [...list].map(f => ({ file: f, path: f.webkitRelativePath || f.name, inFolder: inFolder || !!f.webkitRelativePath }));
 
 async function itemsFromDrop(dt) {
-  // webkitGetAsEntry must be read synchronously, before the first await.
-  const entries = [...(dt.items || [])].filter(i => i.kind === 'file').map(i => i.webkitGetAsEntry && i.webkitGetAsEntry()).filter(Boolean);
-  if (!entries.length) return fileItems(dt.files || [], false);
+  // Everything has to be taken from the drop synchronously, before the first await.
+  const kinds = [...(dt.items || [])].filter(i => i.kind === 'file');
+  if (!kinds.length) return fileItems(dt.files || [], false);
+  const handles = kinds.map(i => { try { return canLink() && i.getAsFileSystemHandle ? i.getAsFileSystemHandle() : null; } catch { return null; } });
+  const entries = kinds.map(i => i.webkitGetAsEntry ? i.webkitGetAsEntry() : null);
+  const files = kinds.map(i => i.getAsFile());
   const out = [];
-  async function walk(entry, prefix, inFolder) {
-    if (entry.isFile) {
-      const f = await new Promise((res, rej) => entry.file(res, rej)).catch(() => null);
-      if (f) out.push({ file: f, path: prefix + f.name, inFolder });
-    } else if (entry.isDirectory) {
-      const reader = entry.createReader();
-      const all = [];
-      for (;;) {
-        const batch = await new Promise((res, rej) => reader.readEntries(res, rej)).catch(() => []);
-        if (!batch.length) break;
-        all.push(...batch);
-      }
-      for (const e of all) await walk(e, prefix + entry.name + '/', true);
-    }
+  for (let k = 0; k < kinds.length; k++) {
+    const h = handles[k] && await handles[k].catch(() => null);
+    const n = out.length;
+    if (h) { try { await walkHandle(h, '', false, null, out); continue; } catch { out.length = n; } }
+    if (entries[k]) await walkEntry(entries[k], '', false, out);
+    else if (files[k]) out.push({ file: files[k], path: files[k].name, inFolder: false });
   }
-  for (const e of entries) await walk(e, '', false);
   return out;
+}
+async function walkEntry(entry, prefix, inFolder, out) {
+  if (entry.isFile) {
+    const f = await new Promise((res, rej) => entry.file(res, rej)).catch(() => null);
+    if (f) out.push({ file: f, path: prefix + f.name, inFolder });
+  } else if (entry.isDirectory) {
+    const reader = entry.createReader();
+    const all = [];
+    for (;;) {
+      const batch = await new Promise((res, rej) => reader.readEntries(res, rej)).catch(() => []);
+      if (!batch.length) break;
+      all.push(...batch);
+    }
+    for (const e of all) await walkEntry(e, prefix + entry.name + '/', true, out);
+  }
+}
+// The same for handles (Chrome, Edge). Each file keeps its handle and the top folder it came in,
+// so its full path can be worked out once that folder is linked.
+async function walkHandle(h, prefix, inFolder, top, out) {
+  if (h.kind === 'file') {
+    if (inFolder && !AUDIO_EXT.has(extOf(h.name))) return;  // inside folders only audio is used
+    const f = await h.getFile().catch(() => null);
+    if (f) out.push({ file: f, path: prefix + f.name, inFolder, handle: h, top });
+    return;
+  }
+  for await (const c of h.values()) await walkHandle(c, prefix + h.name + '/', true, top || h, out);
+}
+
+const PICK_TYPES = [{ description: 'Audio files and lists', accept: { 'audio/*': [...AUDIO_EXT].map(x => '.' + x), 'text/plain': ['.txt'] } }];
+// Resolves to what was picked, null if the picker was closed, or undefined where pickers can't be
+// used (a sandboxed frame), so the caller falls back to a file input.
+async function pick(fn, opts) {
+  if (!canLink() || typeof window[fn] !== 'function') return undefined;
+  try { return await window[fn]({ id: 'interapp-audio', startIn: 'music', ...opts }); }
+  catch (e) {
+    if (e && e.name === 'AbortError') return null;
+    fsaBlocked = true;
+    render();
+    return undefined;
+  }
+}
+async function addFiles() {
+  const picked = await pick('showOpenFilePicker', { multiple: true, types: PICK_TYPES });
+  if (picked === undefined) { el.fileInput.click(); return; }
+  if (!picked) return;
+  const out = [];
+  for (const h of picked) await walkHandle(h, '', false, null, out);
+  handleIncoming(out);
+}
+async function addFolder() {
+  const dir = await pick('showDirectoryPicker', {});
+  if (dir === undefined) { (el.addFolderBtn.hidden ? el.fileInput : el.folderInput).click(); return; }
+  if (!dir) return;
+  const out = [];
+  try { await walkHandle(dir, '', false, null, out); } catch { showNotice(`Couldn't read the folder “${dir.name}”.`); return; }
+  handleIncoming(out);
 }
 
 // Reading the length from metadata is cheap (like TinyTag in the desktop app); the real
@@ -893,6 +1298,8 @@ function clearAll() {
   tracks = [];
   selected = new Set();
   anchorId = cursorId = null;
+  askDir = null;
+  pathSnoozed = new Set();
   el.clearBar.hidden = true;
   showNotice('');
   enqueueStore(() => store.clear());
@@ -938,13 +1345,34 @@ function render() {
   renderSummary();
   renderToolbar();
   renderMissing();
+  renderPathBar();
 }
 function renderMissing() {
-  const k = tracks.filter(t => !t.file).length;
+  const missing = tracks.filter(t => !t.file);
+  const k = missing.length;
   el.missingBar.hidden = !k || building;
   if (!k) return;
-  el.missingText.textContent = `${k} ${plural(k, 'track has', 'tracks have')} no audio file on this computer yet. `
-    + `Drop or add the folder that holds ${plural(k, 'it', 'them')}; a parent folder works too. Files are matched by name and folder, and anything not in the list is left out.`;
+  const locked = accessNeeded();
+  const them = plural(k, 'it', 'them');
+  let mode = 'add';
+  if (locked.length) {
+    mode = 'allow';
+    const where = locked.map(r => `“${baseName(r.path)}”`).join(', ');
+    const n = missing.filter(t => locked.includes(rootFor(shownPath(t)))).length;
+    el.missingText.textContent = `${k} ${plural(k, "track isn't", "tracks aren't")} loaded yet. ` + (n === k
+      ? `Allow this page to read ${where} again to load ${them}.`
+      : `${n} of them ${plural(n, 'is', 'are')} in ${where}; allow this page to read ${plural(locked.length, 'that folder', 'those folders')} again to load ${plural(n, 'it', 'them')}.`);
+  } else if (canLink()) {
+    mode = 'choose';
+    const dir = commonDir(missing.map(shownPath));
+    el.missingText.textContent = `${k} ${plural(k, 'track has', 'tracks have')} no audio file on this computer yet. `
+      + `Choose the folder that holds ${them}${dir ? ` (${dir})` : ''}, or a folder above it. Anything in it that isn't in the list is left out.`;
+  } else {
+    el.missingText.textContent = `${k} ${plural(k, 'track has', 'tracks have')} no audio file on this computer yet. `
+      + `Drop or add the folder that holds ${them}; a parent folder works too. Files are matched by name and folder, and anything not in the list is left out.`;
+  }
+  el.missingAddBtn.dataset.mode = mode;
+  el.missingAddBtn.textContent = { allow: 'Allow access', choose: 'Choose folder…', add: 'Add folder' }[mode];
 }
 
 function roleOf(i, n) { return i === 0 ? 'start' : i === n - 1 ? 'end' : 'mix'; }
@@ -1245,20 +1673,60 @@ window.addEventListener('drop', async e => {
 });
 
 // ---------------------------------------------------------------- buttons
-el.addFilesBtn.onclick = el.emptyAddBtn.onclick = () => el.fileInput.click();
-el.addFolderBtn.onclick = el.missingAddBtn.onclick = () => (el.addFolderBtn.hidden ? el.fileInput : el.folderInput).click();
+el.addFilesBtn.onclick = el.emptyAddBtn.onclick = addFiles;
+el.addFolderBtn.onclick = addFolder;
+el.missingAddBtn.onclick = () => {
+  const mode = el.missingAddBtn.dataset.mode;
+  if (mode === 'allow') allowAccess();
+  else if (mode === 'choose') chooseFolderForMissing();
+  else addFolder();
+};
 el.loadListBtn.onclick = () => el.listInput.click();
-if (!('webkitdirectory' in el.folderInput)) el.addFolderBtn.hidden = true;
+if (!FSA && !('webkitdirectory' in el.folderInput)) el.addFolderBtn.hidden = true;
 el.fileInput.onchange = () => { handleIncoming(fileItems(el.fileInput.files, false)); el.fileInput.value = ''; };
 el.folderInput.onchange = () => { handleIncoming(fileItems(el.folderInput.files, true)); el.folderInput.value = ''; };
 el.listInput.onchange = () => { handleIncoming(fileItems(el.listInput.files, false)); el.listInput.value = ''; };
 el.missingRemoveBtn.onclick = () => removeIds(tracks.filter(t => !t.file).map(t => t.id));
 el.saveListBtn.onclick = async () => {
   if (!tracks.length) return;
-  const text = listText(tracks);
+  const text = listText(tracks), note = relativeNote(tracks);
   await downloadsCap;
   if (dlCap) await saveViaCapability('backup.txt', text);
   else saveViaLink(new Blob([text], { type: 'text/plain;charset=utf-8' }), 'backup.txt');
+  if (note) showNotice(`Saved backup.txt. ${note}`);
+};
+el.pathPickBtn.onclick = async () => {
+  const dir = await pick('showDirectoryPicker', {});
+  if (!dir) return;
+  const list = unresolved();
+  let inside = 0;
+  for (const t of list) if (await dir.resolve(t.handle).catch(() => null)) inside++;
+  if (!inside) { showNotice(`None of the ${list.length} ${plural(list.length, 'track', 'tracks')} without a full path ${plural(list.length, 'is', 'are')} in “${dir.name}”.`); return; }
+  const p = await pathOfHandle(dir);
+  if (p) { await addRoot(p, dir); return; }
+  askDir = dir;
+  render();
+  el.pathInput.focus();
+};
+el.pathForm.onsubmit = async e => {
+  e.preventDefault();
+  const dir = pathDir;
+  if (!dir) return;
+  const p = cleanPath(el.pathInput.value);
+  const bad = !isAbs(p) ? `Paste the folder's full path, starting with the drive, like C:\\…\\${dir.name}.`
+    : normPart(baseName(p)) !== normPart(dir.name) ? `That path ends in “${baseName(p)}”, but the folder is “${dir.name}”.` : '';
+  el.pathErr.textContent = bad;
+  el.pathErr.hidden = !bad;
+  if (bad) return;
+  askDir = null;
+  const n = await addRoot(p, dir);
+  showNotice(`Linked ${p}.` + (n ? ` ${n} ${plural(n, 'track now has its', 'tracks now have their')} full path.` : ''));
+  render();
+};
+el.pathLaterBtn.onclick = el.pathCancelBtn.onclick = () => {
+  pathSnoozed = new Set(unresolved().map(t => t.id));
+  askDir = null;
+  render();
 };
 el.upBtn.onclick = () => moveSelected(-1);
 el.downBtn.onclick = () => moveSelected(1);
@@ -1279,10 +1747,12 @@ el.restoreBtn.onclick = () => {
   const recs = pendingRestore || [];
   pendingRestore = null;
   el.restoreBar.hidden = true;
-  tracks = recs.map(r => ({ id: r.id, file: r.file, name: r.name, path: r.path, listPath: r.listPath || '', size: r.size, lastModified: r.lastModified, duration: undefined }));
+  tracks = recs.map(r => ({ id: r.id, file: r.file, name: r.name, path: r.path, listPath: r.listPath || '', size: r.size, lastModified: r.lastModified, duration: undefined, handle: r.handle || null, top: null }));
   selected = new Set();
   tracks.forEach(t => { if (t.file) queueProbe(t); });
   render();
+  // Audio that didn't fit in the backup is read again from the linked folders.
+  if (tracks.some(t => !t.file)) loadFromRoots(true);
 };
 el.discardBtn.onclick = dropPendingRestore;
 
@@ -1488,8 +1958,7 @@ async function build() {
     const blob = new Blob(parts, { type: MIME[f.ext] });
     const seconds = totalFrames / rate;
     result = {
-      blob, url: URL.createObjectURL(blob), ext: f.ext, seconds,
-      listText: listText(list),
+      blob, url: URL.createObjectURL(blob), ext: f.ext, seconds, list,
       took: (performance.now() - t0) / 1000,
     };
     setProgress(1, `Built ${fmtTime(seconds)} of audio in ${Math.max(1, Math.round(result.took))} s.`);
@@ -1565,16 +2034,16 @@ function renderResult() {
   el.result.hidden = false;
   if (el.resultAudio.getAttribute('src') !== result.url) el.resultAudio.src = result.url;
   el.resultMeta.textContent = `${base}${result.ext} · ${fmtTime(result.seconds)} · ${fmtSize(result.blob.size)}`;
+  const rel = relativeNote(result.list);
   if (dlCap) {
     el.downloadBtn.textContent = `Download ${base}.zip`;
-    el.dlNote.textContent = `The zip holds ${base}${result.ext} and the track list. This viewer can't save audio files directly.`;
-    el.dlNote.hidden = false;
-    el.listBtn.hidden = true;
+    el.dlNote.textContent = `The zip holds ${base}${result.ext} and ${base}.txt, the track list. This viewer can't save audio files directly.` + (rel ? ' ' + rel : '');
   } else {
+    // Like the desktop app, a build comes with the list of its tracks' full paths.
     el.downloadBtn.textContent = `Download ${base}${result.ext}`;
-    el.dlNote.hidden = true;
-    el.listBtn.hidden = false;
+    el.dlNote.textContent = `Also saves ${base}.txt with each track's full path. Drop it here later to load this build again and edit it.` + (rel ? ' ' + rel : '');
   }
+  el.dlNote.hidden = false;
 }
 
 function saveViaLink(blob, filename) {
@@ -1601,20 +2070,18 @@ async function saveViaCapability(filename, data) {
 el.downloadBtn.onclick = async () => {
   if (!result) return;
   await downloadsCap;
-  const base = fmtName();
+  const base = fmtName(), text = listText(result.list);
   if (dlCap) {
     const audio = new Uint8Array(await result.blob.arrayBuffer());
     const zip = makeZip([
       { name: base + result.ext, data: audio },
-      { name: base + ' - track list.txt', data: new TextEncoder().encode(result.listText) },
+      { name: base + '.txt', data: new TextEncoder().encode(text) },
     ]);
     await saveViaCapability(base + '.zip', zip);
   } else {
     saveViaLink(result.blob, base + result.ext);
+    saveViaLink(new Blob([text], { type: 'text/plain;charset=utf-8' }), base + '.txt');
   }
-};
-el.listBtn.onclick = () => {
-  if (result) saveViaLink(new Blob([result.listText], { type: 'text/plain;charset=utf-8' }), fmtName() + '.txt');
 };
 
 // Minimal ZIP writer (stored, no compression; MP3 doesn't compress anyway).
@@ -1658,6 +2125,30 @@ function makeZip(entries) {
 
 window.addEventListener('beforeunload', e => { if (building) { e.preventDefault(); e.returnValue = ''; } });
 
+// ---------------------------------------------------------------- theme
+const ICON_SUN = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="8" cy="8" r="3"/><path d="M8 1.5v1.6M8 12.9v1.6M1.5 8h1.6M12.9 8h1.6M3.4 3.4l1.1 1.1M11.5 11.5l1.1 1.1M3.4 12.6l1.1-1.1M11.5 4.5l1.1-1.1"/></svg>';
+const ICON_MOON = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M13.5 9.6A5.8 5.8 0 0 1 6.4 2.5a5.8 5.8 0 1 0 7.1 7.1z"/></svg>';
+const darkQuery = window.matchMedia('(prefers-color-scheme: dark)');
+const isDark = () => {
+  const t = document.documentElement.dataset.theme;
+  return t ? t === 'dark' : darkQuery.matches;
+};
+function paintThemeBtn() {
+  const dark = isDark();
+  el.themeBtn.innerHTML = dark ? ICON_SUN : ICON_MOON;
+  const label = dark ? 'Switch to light mode' : 'Switch to dark mode';
+  el.themeBtn.title = label;
+  el.themeBtn.setAttribute('aria-label', label);
+}
+el.themeBtn.onclick = () => {
+  const next = isDark() ? 'light' : 'dark';
+  document.documentElement.dataset.theme = next;
+  storageSet('interapp.theme', next);
+  paintThemeBtn();
+};
+darkQuery.addEventListener('change', paintThemeBtn);
+paintThemeBtn();
+
 // ---------------------------------------------------------------- start
 const savedFormat = storageGet('interapp.format');
 if (savedFormat && FORMATS[savedFormat]) el.format.value = savedFormat;
@@ -1671,11 +2162,13 @@ if (typeof lamejs === 'undefined') {
 render();
 
 try {
-  store.load().then(recs => {
+  store.load().then(async recs => {
+    await rootsReady;
     if (!recs.length || tracks.length) return;
     pendingRestore = recs;
     const total = recs.reduce((a, r) => a + (r.file ? r.size || 0 : 0), 0);
-    const noAudio = recs.filter(r => !r.file).length;
+    // Audio missing from the backup can still come from a linked folder.
+    const noAudio = recs.filter(r => !r.file && !rootFor(r.listPath || r.path)).length;
     el.restoreText.textContent = `Your last list (${recs.length} ${plural(recs.length, 'track', 'tracks')}${total ? ', ' + fmtSize(total) : ''}) is saved in this browser`
       + (noAudio ? `; ${noAudio} of them will need their folder added again` : '') + '. Restore it? Adding new files discards it.';
     el.restoreBar.hidden = false;
