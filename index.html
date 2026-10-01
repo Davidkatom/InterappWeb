@@ -573,11 +573,12 @@ function buildIndex(entries) {
 }
 // Returns the best entry. When only the file name agrees and several tracks in the list share
 // that name (28.mp3 in different month folders), it refuses to guess.
-function findMatch(index, parts, sharedName, used) {
+function findMatch(index, parts, sharedName, used, exclude) {
   const cands = index.get(parts[parts.length - 1]);
   if (!cands) return { entry: null };
   let best = null, bestScore = 0;
   for (const c of cands) {
+    if (exclude && exclude(c.entry)) continue;
     let s = 0;
     while (s < c.parts.length && s < parts.length && c.parts[c.parts.length - 1 - s] === parts[parts.length - 1 - s]) s++;
     if (s > bestScore || (s === bestScore && best && used.has(best.entry) && !used.has(c.entry))) { best = c; bestScore = s; }
@@ -938,6 +939,7 @@ async function linkForMissing(dir) {
   if (/^([A-Za-z]:)?[\\/]*$/.test(dir.name)) { showNotice("None of the missing tracks were found there. Choose the folder that holds them rather than a whole drive."); return; }
   const out = [];
   try { await walkHandle(dir, '', false, null, out); } catch { showNotice(`Couldn't read the folder “${dir.name}”.`); return; }
+  if (!out.length) { showNotice(`None of the missing tracks were found in “${dir.name}”.`); return; }
   handleIncoming(out);
 }
 
@@ -1119,8 +1121,11 @@ async function importList(file, audio, notes) {
   // A track keeps the full path it was found at. A file matched only by name and folder, in a
   // folder whose place isn't known, gets none, so the path bar asks for that folder.
   const keepPath = (t, line) => t.handle && isAbs(t.listPath) ? t.listPath : line;
+  // A track already in the list is taken for a full path only if it's at that same path: one
+  // that only shares the file name (01.mp3 from another day's folder) is a different recording.
+  const elsewhere = line => e => e.track && isAbs(line) && isAbs(e.path) && pathParts(e.path).join('/') !== pathParts(line).join('/');
   const next = lines.map(line => {
-    const m = findMatch(index, pathParts(line), counts.get(normPart(baseName(line))) > 1, used);
+    const m = findMatch(index, pathParts(line), counts.get(normPart(baseName(line))) > 1, used, elsewhere(line));
     if (m.ambiguous) ambiguous++;
     const e = m.entry;
     if (!e) return makeTrack(null, line, line);
