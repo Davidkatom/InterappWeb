@@ -208,6 +208,20 @@ footer:not(:has(#backupNote:not(:empty), #rootsBox:not([hidden]))){display:none}
 .roots code{font:12px var(--font-mono);color:var(--ink);overflow-wrap:anywhere}
 .link-btn{padding:0;border:0;background:none;color:var(--accent);font-size:12.5px;text-decoration:underline;cursor:pointer}
 
+/* ---------- first run: the root folder is linked before anything else ---------- */
+.app[data-gate="wait"] :is(.arrangement,.work,footer){visibility:hidden}
+.app[data-gate="on"] :is(.arrangement,.work,footer){display:none}
+.gate{padding:clamp(28px,6vw,56px) clamp(16px,4vw,40px);display:grid;justify-items:center}
+.gate-step{display:grid;justify-items:center;gap:14px;width:100%;max-width:60ch;margin:0;text-align:center}
+.gate h2{margin:0;font:700 24px/1.2 var(--font-display);text-wrap:balance}
+.gate p{margin:0;color:var(--muted);overflow-wrap:anywhere}
+.gate code{font:13px var(--font-mono);color:var(--ink)}
+.gate .build{padding-inline:24px}
+.gate .gate-note{font-size:13px}
+.gate form.gate-step{max-width:640px}
+.gate .path-form{width:100%;justify-content:center}
+.gate .path-err{color:var(--danger);font-size:13px}
+
 .drop-overlay{position:fixed;inset:0;z-index:20;display:grid;place-items:center;padding:24px;background:var(--bg);background:color-mix(in srgb,var(--bg) 82%,transparent)}
 .drop-overlay div{padding:28px 36px;border:2px dashed var(--accent);border-radius:var(--radius);background:var(--surface);font:700 20px/1.3 var(--font-display);color:var(--accent);text-align:center;pointer-events:none}
 
@@ -222,7 +236,7 @@ footer:not(:has(#backupNote:not(:empty), #rootsBox:not([hidden]))){display:none}
 </style>
 </head>
 <body>
-<div class="app">
+<div class="app" id="app" data-gate="wait">
   <header class="top">
     <div class="head">
       <div class="brand">
@@ -240,6 +254,24 @@ footer:not(:has(#backupNote:not(:empty), #rootsBox:not([hidden]))){display:none}
       <div class="legend" id="legend"></div>
     </section>
   </header>
+
+  <section class="panel gate" id="gate" aria-labelledby="gateTitle" hidden>
+    <div class="gate-step" id="gatePick">
+      <h2 id="gateTitle">Link your audio folder</h2>
+      <p>Link the one folder that holds all your audio, like <code>D:\Audio</code>. From then on, any list whose tracks are in a folder of that name loads from it by itself, even a list saved on another computer. You only do this once.</p>
+      <button type="button" class="btn primary build" id="gateBtn">Link root audio folder</button>
+      <p class="gate-note">Chrome won't link <code>C:\</code>, your user folder, or Documents, Desktop and Downloads themselves. Choose a folder inside them instead.</p>
+    </div>
+    <form class="gate-step" id="gateForm" hidden>
+      <h2>Link audio folder</h2>
+      <div class="path-form">
+        <input id="gateInput" type="text" spellcheck="false" autocomplete="off" aria-label="Full path of the folder">
+        <button type="button" class="btn" id="gateChooseBtn">Choose folder…</button>
+        <button type="submit" class="btn primary">Link</button>
+      </div>
+      <p class="path-err" id="gateErr" role="alert" hidden></p>
+    </form>
+  </section>
 
   <main class="work">
     <section class="panel tracks" id="tracksPanel" aria-label="Tracks">
@@ -395,7 +427,8 @@ const el = {};
  'loadListBtn','listInput','saveListBtn','outName','extLabel','format','sumLength','sumTracks','sumSize',
  'pathBar','pathText','pathActions','pathPickBtn','pathLaterBtn','pathForm','pathInput','pathCancelBtn','pathErr',
  'buildBtn','progress','bar','status','error','result','resultAudio','resultMeta','downloadBtn','dlNote',
- 'backupNote','rootsBox','dropOverlay','themeBtn'].forEach(id => { el[id] = $(id); });
+ 'backupNote','rootsBox','dropOverlay','themeBtn',
+ 'app','gate','gatePick','gateBtn','gateForm','gateInput','gateChooseBtn','gateErr'].forEach(id => { el[id] = $(id); });
 
 // ---------------------------------------------------------------- state
 // listPath is the path a saved list writes: the full path when it's known. handle and top are the
@@ -544,6 +577,16 @@ function persistDiff(prev, next) {
     await store.order(order);
   });
 }
+function renderRestore() {
+  const recs = pendingRestore;
+  if (!recs) return;
+  const total = recs.reduce((a, r) => a + (r.file ? r.size || 0 : 0), 0);
+  // Audio missing from the backup can still come from a linked folder.
+  const noAudio = recs.filter(r => !r.file && !rootsFor(r.listPath || r.path).length).length;
+  el.restoreText.textContent = `Your last list (${recs.length} ${plural(recs.length, 'track', 'tracks')}${total ? ', ' + fmtSize(total) : ''}) is saved in this browser`
+    + (noAudio ? `; ${noAudio} of them will need their folder added again` : '') + '. Restore it? Adding new files discards it.';
+  el.restoreBar.hidden = false;
+}
 function dropPendingRestore() {
   if (!pendingRestore) return;
   pendingRestore = null;
@@ -648,6 +691,7 @@ async function permission(handle, ask) {
     return s;
   } catch { return 'prompt'; }   // asking needs a click
 }
+let rootsLoaded = !FSA;     // until then it isn't known whether to show the gate
 const rootsReady = (async () => {
   if (!FSA) return;
   try {
@@ -655,6 +699,7 @@ const rootsReady = (async () => {
     roots = (saved || []).filter(r => r && r.handle && r.path).map(r => ({ path: r.path, parts: pathParts(r.path), handle: r.handle, state: 'prompt' }));
     await Promise.all(roots.map(async r => { r.state = await permission(r.handle, false); }));
   } catch { /* linking is optional */ }
+  rootsLoaded = true;
   renderRoots();
   render();
 })();
@@ -986,6 +1031,66 @@ function renderRoots() {
   }));
 }
 
+// ---------------------------------------------------------------- root folder
+// Where folders can be linked, the page first asks for the one that holds all the audio and links
+// it, so that a list's tracks inside it load by themselves. Nothing else is shown until then. A
+// folder's handle carries only its name, so its full path is asked for once, unless it's a whole
+// drive or the list saved in this browser shows where it is.
+let gateDir = null;         // folder picked at the gate whose full path is being asked for
+function renderGate() {
+  const state = !rootsLoaded ? 'wait' : canLink() && !roots.length ? 'on' : 'off';
+  el.app.dataset.gate = state;
+  el.gate.hidden = state !== 'on';
+  if (state !== 'on') gateDir = null;
+  el.gatePick.hidden = !!gateDir;
+  el.gateForm.hidden = !gateDir;
+}
+const gated = () => el.app.dataset.gate !== 'off';
+async function pickRoot() {
+  const dir = await pick('showDirectoryPicker', {});
+  if (!dir) return;   // closed, or pickers can't be used here, which takes the gate away
+  const drive = /^([A-Za-z]):[\\/]?$/.exec(dir.name);
+  const known = [...tracks.map(shownPath), ...(pendingRestore || []).map(r => r.listPath || r.path)];
+  const p = drive ? drive[1].toUpperCase() + ':\\' : known.length ? await inferRoot(dir, known) : null;
+  if (p) { await linkRoot(p, dir); return; }
+  gateDir = dir;
+  el.gateInput.value = '';
+  el.gateInput.placeholder = `C:\\…\\${dir.name}`;
+  el.gateErr.hidden = true;
+  renderGate();
+  el.gateInput.focus();
+}
+async function linkRoot(p, dir) {
+  gateDir = null;
+  await addRoot(p, dir);
+  renderRestore();
+  await loadFromRoots(false);   // renders, which takes the gate away
+  showNotice(`Linked ${p}. Lists with tracks inside it now load by themselves.`);
+}
+// A list saved on another computer points into that computer's copy of the audio folder. Such a
+// path is read from the linked folder of the same name instead: everything before the first folder
+// named like a linked one is dropped, and the rest is found inside the linked folder. Paths already
+// inside a linked folder are kept, and a linked drive takes no paths over, since it has no name.
+function rebase(line, moved) {
+  if (rootsFor(line).length) return line;
+  const byName = new Map();
+  for (const r of roots) {
+    const drive = r.parts.length === 1 && /^[a-z]:$/.test(r.parts[0]);
+    if (r.parts.length && !drive && !byName.has(r.parts[r.parts.length - 1])) byName.set(r.parts[r.parts.length - 1], r);
+  }
+  const segs = segEnds(line);
+  for (let i = 0; i < segs.length - 1; i++) {
+    const r = byName.get(normPart(segs[i].name));
+    if (!r) continue;
+    moved.set(r, (moved.get(r) || 0) + 1);
+    return joinPath(r.path, segs.slice(i + 1).map(s => s.name));
+  }
+  return line;
+}
+// What's wrong with a full path typed for a folder, if anything.
+const pathProblem = (p, dir) => !isAbs(p) ? `Paste the folder's full path, starting with the drive, like C:\\…\\${dir.name}.`
+  : normPart(baseName(p)) !== normPart(dir.name) ? `That path ends in “${baseName(p)}”, but the folder is “${dir.name}”.` : '';
+
 // Lines without a full path can only be found again by adding their folder with the list.
 function relativeNote(list) {
   const k = list.filter(t => !isAbs(shownPath(t))).length;
@@ -1095,12 +1200,14 @@ async function readText(file) {
 async function importList(file, audio, notes) {
   let text;
   try { text = await readText(file); } catch { showNotice(`Couldn't read ${file.name}.`); return; }
-  const seen = new Set(), lines = [];
+  await rootsReady;
+  const seen = new Set(), lines = [], moved = new Map();
   let nonAudio = 0;
   for (let line of text.split(/\r\n|\r|\n/)) {
     line = line.trim().replace(/^"(.*)"$/, '$1').trim();
     if (!line) continue;
     if (!AUDIO_EXT.has(extOf(line))) { nonAudio++; continue; }
+    line = rebase(line, moved);
     const key = pathParts(line).join('/');
     if (seen.has(key)) continue;
     seen.add(key);
@@ -1164,6 +1271,7 @@ async function importList(file, audio, notes) {
   notes.unshift(found === next.length
     ? `Loaded ${file.name}: all ${next.length} tracks found.`
     : `Loaded ${file.name}: found ${found} of ${next.length} tracks.`);
+  for (const [r, k] of moved) notes.push(`Read ${k} ${plural(k, 'track', 'tracks')} from ${r.path}; the list has ${plural(k, 'it', 'them')} in another folder named “${baseName(r.path)}”.`);
   if (ambiguous) notes.push(`${ambiguous} ${plural(ambiguous, 'track shares its', 'tracks share their')} file name with other tracks, so ${plural(ambiguous, 'it needs its', 'they need their')} folder to be told apart.`);
   if (short.unsure.length) notes.push(unsureNote(short.unsure));
   if (ignored) notes.push(`Left out ${ignored} audio ${plural(ignored, "file that isn't", "files that aren't")} in the list.`);
@@ -1498,6 +1606,7 @@ function render() {
   renderToolbar();
   renderMissing();
   renderPathBar();
+  renderGate();
 }
 function renderMissing() {
   const missing = tracks.filter(t => !t.file);
@@ -1886,6 +1995,7 @@ function markDropRow(row) {
 window.addEventListener('dragover', e => {
   if (!hasFiles(e)) return;
   e.preventDefault();
+  if (gated()) { e.dataTransfer.dropEffect = 'none'; return; }
   e.dataTransfer.dropEffect = building ? 'none' : 'copy';
   const row = missingRowAt(e);
   markDropRow(row);
@@ -1902,7 +2012,7 @@ window.addEventListener('drop', async e => {
   const row = missingRowAt(e), t = row && tracks.find(x => x.id === row.dataset.id);
   markDropRow(null);
   el.dropOverlay.hidden = true;
-  if (building) return;
+  if (building || gated()) return;
   const items = await itemsFromDrop(e.dataTransfer);
   if (t) dropOnTrack(t, items);
   else handleIncoming(items);
@@ -1949,9 +2059,7 @@ el.pathForm.onsubmit = async e => {
   e.preventDefault();
   const dir = pathDir;
   if (!dir) return;
-  const p = cleanPath(el.pathInput.value);
-  const bad = !isAbs(p) ? `Paste the folder's full path, starting with the drive, like C:\\…\\${dir.name}.`
-    : normPart(baseName(p)) !== normPart(dir.name) ? `That path ends in “${baseName(p)}”, but the folder is “${dir.name}”.` : '';
+  const p = cleanPath(el.pathInput.value), bad = pathProblem(p, dir);
   el.pathErr.textContent = bad;
   el.pathErr.hidden = !bad;
   if (bad) return;
@@ -1959,6 +2067,16 @@ el.pathForm.onsubmit = async e => {
   const n = await addRoot(p, dir);
   showNotice(`Linked ${p}.` + (n ? ` ${n} ${plural(n, 'track now has its', 'tracks now have their')} full path.` : ''));
   render();
+};
+el.gateBtn.onclick = el.gateChooseBtn.onclick = pickRoot;
+el.gateForm.onsubmit = async e => {
+  e.preventDefault();
+  const dir = gateDir;
+  if (!dir) return;
+  const p = cleanPath(el.gateInput.value), bad = pathProblem(p, dir);
+  el.gateErr.textContent = bad;
+  el.gateErr.hidden = !bad;
+  if (!bad) await linkRoot(p, dir);
 };
 el.pathLaterBtn.onclick = el.pathCancelBtn.onclick = () => {
   pathSnoozed = new Set(unresolved().map(t => t.id));
@@ -2403,12 +2521,7 @@ try {
     await rootsReady;
     if (!recs.length || tracks.length) return;
     pendingRestore = recs;
-    const total = recs.reduce((a, r) => a + (r.file ? r.size || 0 : 0), 0);
-    // Audio missing from the backup can still come from a linked folder.
-    const noAudio = recs.filter(r => !r.file && !rootsFor(r.listPath || r.path).length).length;
-    el.restoreText.textContent = `Your last list (${recs.length} ${plural(recs.length, 'track', 'tracks')}${total ? ', ' + fmtSize(total) : ''}) is saved in this browser`
-      + (noAudio ? `; ${noAudio} of them will need their folder added again` : '') + '. Restore it? Adding new files discards it.';
-    el.restoreBar.hidden = false;
+    renderRestore();
   }).catch(() => enqueueStore(() => Promise.reject()));
 } catch {
   enqueueStore(() => Promise.reject());
