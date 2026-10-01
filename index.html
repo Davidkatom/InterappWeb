@@ -141,6 +141,7 @@ h1{margin:0;font:800 clamp(30px,4.2vw,42px)/1 var(--font-display);letter-spacing
 .row.is-selected{background:var(--accent-soft)}
 .list.kbd .row.is-cursor{box-shadow:inset 0 0 0 2px var(--accent)}
 .row.drop-before{box-shadow:inset 0 3px 0 var(--accent)}
+.row.drop-into{outline:2px dashed var(--accent);outline-offset:-2px}
 .row.drop-after{box-shadow:inset 0 -3px 0 var(--accent)}
 .row.has-error{background:var(--danger-soft)}
 .row.is-missing .fname{color:var(--muted);font-style:italic}
@@ -782,10 +783,10 @@ async function resolveTracks() {
 
 // Loads tracks that have no audio yet from the linked folders their paths are in. Folders that can
 // be read now are tried first. With ask, the others are then asked for again, outermost first, so
-// that one permission covers as many tracks as it can.
+// that one permission covers as many tracks as it can. Paths that are too long are left alone.
 async function fillFromRoots(list, ask) {
   await rootsReady;
-  const want = list.filter(t => !t.file && rootsFor(shownPath(t)).length);
+  const want = list.filter(t => !t.file && !tooLong(shownPath(t)) && rootsFor(shownPath(t)).length);
   if (!want.length) return [];
   for (const r of roots) if (r.state !== 'granted') r.state = await permission(r.handle, false);
   const filled = [], caches = new Map();
@@ -823,7 +824,7 @@ async function loadFromRoots(ask) {
 function accessNeeded() {
   const out = new Set();
   for (const t of tracks) {
-    const r = t.file ? null : rootsFor(shownPath(t)).find(x => x.state === 'prompt');
+    const r = t.file || tooLong(shownPath(t)) ? null : rootsFor(shownPath(t)).find(x => x.state === 'prompt');
     if (r) out.add(r);
   }
   return [...out];
@@ -870,7 +871,7 @@ function refused(p, parts) {
 }
 // The highest folder above a path that the browser lets a page read.
 function topAllowed(p) {
-  if (!isAbs(p) || tooLong(p)) return null;   // those need a short path first (see longPathNote)
+  if (!isAbs(p) || tooLong(p)) return null;   // see tooLong
   const segs = segEnds(p), parts = segs.map(s => normPart(s.name));
   for (let n = 1; n < segs.length; n++) if (!refused(p, parts.slice(0, n))) return p.slice(0, segs[n - 1].end);
   return null;
@@ -939,7 +940,7 @@ async function linkForMissing(dir) {
   if (/^([A-Za-z]:)?[\\/]*$/.test(dir.name)) { showNotice("None of the missing tracks were found there. Choose the folder that holds them rather than a whole drive."); return; }
   const out = [];
   try { await walkHandle(dir, '', false, null, out); } catch { showNotice(`Couldn't read the folder “${dir.name}”.`); return; }
-  if (!out.length) { showNotice(`None of the missing tracks were found in “${dir.name}”.`); return; }
+  if (!out.length) { showNotice(unreadableNote(out.unreadable) || `None of the missing tracks were found in “${dir.name}”.`); return; }
   handleIncoming(out);
 }
 
@@ -1004,8 +1005,10 @@ function showNotice(text, action) {
   el.noticeAction.onclick = action ? () => { showNotice(''); action.fn(); } : null;
 }
 const plural = (n, one, many) => n === 1 ? one : many;
+// A track is named after its full path when there is one: a file that came in under its short
+// name (see tooLong) still shows its real name.
 const makeTrack = (file, path, listPath, from) => ({
-  id: newId(), file, name: file ? file.name : baseName(path), path, listPath: listPath || '',
+  id: newId(), file, name: baseName(listPath || path), path, listPath: listPath || '',
   size: file ? file.size : 0, lastModified: file ? file.lastModified : 0, duration: file ? file.__duration : undefined,
   handle: (from && from.handle) || null, top: (from && from.top) || null,
 });
@@ -1015,12 +1018,14 @@ async function handleIncoming(items) {
   if (building) return;
   clearError();
   resetStatus();
-  if (!items.length) { showNotice('No audio files were found in what you added.'); return; }
+  const bad = unreadableNote(items.unreadable);
+  if (!items.length) { showNotice(bad || 'No audio files were found in what you added.'); return; }
   const lists = items.filter(it => !it.inFolder && extOf(it.file.name) === 'txt');
   const audio = items.filter(it => AUDIO_EXT.has(extOf(it.file.name)));
   const strays = items.filter(it => !it.inFolder && !lists.includes(it) && !audio.includes(it)).length;
   const notes = [];
   if (strays) notes.push(`Skipped ${strays} ${plural(strays, "file that isn't", "files that aren't")} audio (MP3, WAV, OGG, FLAC, M4A, AAC) or a list (.txt).`);
+  if (bad) notes.push(bad);
   if (lists.length) {
     if (lists.length > 1) notes.push(`Only one list can be loaded at a time, so ${lists[0].file.name} was used.`);
     await importList(lists[0].file, audio, notes);
@@ -1033,14 +1038,15 @@ async function handleIncoming(items) {
   if (tracks.some(t => !t.file)) {
     // While some tracks are missing, files fill those gaps first. Files from inside a dropped
     // folder that don't match are left out; files added one by one are appended as usual.
-    const { filled, ambiguous, leftovers } = fillMissing(audio);
+    const { filled, ambiguous, unsure, leftovers } = fillMissing(audio);
     // A loose file named like a still-missing track is held back rather than appended.
     const missingNames = new Set(tracks.filter(t => !t.file).map(t => normPart(baseName(shownPath(t)))));
-    const loose = leftovers.filter(it => !it.inFolder && !missingNames.has(normPart(it.file.name)));
+    const loose = leftovers.filter(it => !it.inFolder && !missingNames.has(normPart(it.file.name)) && !unsure.includes(it));
     const ignored = leftovers.filter(it => it.inFolder).length;
     const still = tracks.filter(t => !t.file).length;
     if (filled) notes.push(`Found ${filled} missing ${plural(filled, 'track', 'tracks')}${still ? `; ${still} still missing` : ''}.`);
     if (ambiguous) notes.push(`${ambiguous} ${plural(ambiguous, 'track shares its', 'tracks share their')} file name with other tracks in the list. Add the folder that holds ${plural(ambiguous, 'it', 'them')} so they can be told apart.`);
+    if (unsure.length) notes.push(unsureNote(unsure));
     if (ignored) notes.push(`Left out ${ignored} ${plural(ignored, "file that isn't", "files that aren't")} in the list.`);
     if (loose.length) { addAudio(loose, notes); return; }
     if (!filled && !ignored && !ambiguous) notes.push('None of these files match a missing track.');
@@ -1133,8 +1139,15 @@ async function importList(file, audio, notes) {
     used.add(e);
     if (reuse) return { ...e.track, listPath: keepPath(e.track, line) };  // keeps its id, stored audio and length
     if (!e.item) return makeTrack(e.file, e.path, keepPath(e.track, line), e.track);
-    return makeTrack(e.file, e.path, e.item.fullPath || (e.item.handle ? '' : line), e.item);
+    return makeTrack(e.file, e.path, matchedPath(e.item, line), e.item);
   });
+  // Files that came in under their short names fill the too-long lines they can only be.
+  const usedItems = new Set([...used].map(e => e.item));
+  const short = matchShortNames(audio.filter(it => !usedItems.has(it)), lines);
+  for (const [it, line] of short.pairs) {
+    const i = lines.indexOf(line);
+    if (!next[i].file) next[i] = makeTrack(it.file, it.path, line, it);
+  }
   // The rest are read from the linked folders their paths are in. Asking to read a folder again
   // needs a click, which a drop isn't; the missing-tracks bar asks then.
   await fillFromRoots(next, !!(navigator.userActivation && navigator.userActivation.isActive));
@@ -1147,11 +1160,12 @@ async function importList(file, audio, notes) {
     const m = findMatch(droppedIndex, pathParts(line), counts.get(normPart(baseName(line))) > 1, inList);
     if (m.entry) inList.add(m.entry);
   }
-  const ignored = audio.length - inList.size;
+  const ignored = audio.length - inList.size - short.pairs.size - short.unsure.length;
   notes.unshift(found === next.length
     ? `Loaded ${file.name}: all ${next.length} tracks found.`
     : `Loaded ${file.name}: found ${found} of ${next.length} tracks.`);
   if (ambiguous) notes.push(`${ambiguous} ${plural(ambiguous, 'track shares its', 'tracks share their')} file name with other tracks, so ${plural(ambiguous, 'it needs its', 'they need their')} folder to be told apart.`);
+  if (short.unsure.length) notes.push(unsureNote(short.unsure));
   if (ignored) notes.push(`Left out ${ignored} audio ${plural(ignored, "file that isn't", "files that aren't")} in the list.`);
   if (nonAudio) notes.push(`Skipped ${nonAudio} ${plural(nonAudio, "line that isn't", "lines that aren't")} an audio file path.`);
   const prev = tracks;
@@ -1193,18 +1207,46 @@ function fillMissing(items) {
     if (m.ambiguous) ambiguous++;
     if (!m.entry) continue;
     used.add(m.entry);
-    const it = m.entry.item, f = it.file;
-    Object.assign(t, { file: f, name: f.name, path: m.entry.path, size: f.size, lastModified: f.lastModified, duration: f.__duration, handle: it.handle || null, top: it.top || null });
-    t.listPath = it.fullPath || (it.handle ? '' : p);  // as in importList
-    filled.push(t);
-  }
-  if (filled.length) {
-    enqueueStore(() => store.put(filled));
-    filled.forEach(t => { if (dur(t) == null) queueProbe(t); });
-    askPersist();
+    filled.push(fillTrack(t, m.entry.item));
   }
   const usedItems = new Set([...used].map(e => e.item));
-  return { filled: filled.length, ambiguous, leftovers: items.filter(it => !usedItems.has(it)) };
+  const short = matchShortNames(items.filter(it => !usedItems.has(it)), tracks.map(shownPath));
+  for (const [it, p] of short.pairs) {
+    const t = tracks.find(x => !x.file && shownPath(x) === p);
+    if (t) { usedItems.add(it); filled.push(fillTrack(t, it)); }
+  }
+  savedFilled(filled);
+  return { filled: filled.length, ambiguous, unsure: short.unsure, leftovers: items.filter(it => !usedItems.has(it)) };
+}
+// The full path kept for a file matched to a list's path: where the file is known to be or, for a
+// file with a handle whose folder isn't known, none, so the path bar asks for that folder. A path
+// that is too long is kept, since such a file can only have come in under its short path.
+const matchedPath = (it, p) => it.fullPath || (it.handle && !tooLong(p) ? '' : p);
+function fillTrack(t, it) {
+  const f = it.file, p = shownPath(t);
+  Object.assign(t, { file: f, path: it.path, listPath: matchedPath(it, p), size: f.size, lastModified: f.lastModified, duration: f.__duration, handle: it.handle || null, top: it.top || null });
+  t.name = baseName(t.listPath || f.name);
+  return t;
+}
+function savedFilled(filled) {
+  if (!filled.length) return;
+  enqueueStore(() => store.put(filled));
+  filled.forEach(t => { if (dur(t) == null) queueProbe(t); });
+  askPersist();
+}
+// A file dropped onto a missing track's row is taken for that track, whatever its name.
+async function dropOnTrack(t, items) {
+  const audio = items.filter(it => AUDIO_EXT.has(extOf(it.file.name)));
+  if (audio.length !== 1 || items.length !== 1) { handleIncoming(items); return; }
+  clearError();
+  resetStatus();
+  await locate(audio, [shownPath(t)]);
+  if (building || t.file || !tracks.includes(t)) return;
+  dropPendingRestore();
+  savedFilled([fillTrack(t, audio[0])]);
+  const still = tracks.filter(x => !x.file).length;
+  showNotice(`Loaded ${t.name}${still ? `; ${still} ${plural(still, 'track', 'tracks')} still missing` : ''}.`);
+  changed();
 }
 
 const listText = list => list.map(shownPath).join('\n') + '\n';
@@ -1232,6 +1274,7 @@ async function walkEntry(entry, prefix, inFolder, out) {
   if (entry.isFile) {
     const f = await new Promise((res, rej) => entry.file(res, rej)).catch(() => null);
     if (f) out.push({ file: f, path: prefix + f.name, inFolder });
+    else if (!inFolder || AUDIO_EXT.has(extOf(entry.name))) out.unreadable = (out.unreadable || 0) + 1;
   } else if (entry.isDirectory) {
     const reader = entry.createReader();
     const all = [];
@@ -1250,6 +1293,7 @@ async function walkHandle(h, prefix, inFolder, top, out) {
     if (inFolder && !AUDIO_EXT.has(extOf(h.name))) return;  // inside folders only audio is used
     const f = await h.getFile().catch(() => null);
     if (f) out.push({ file: f, path: prefix + f.name, inFolder, handle: h, top });
+    else out.unreadable = (out.unreadable || 0) + 1;
     return;
   }
   for await (const c of h.values()) await walkHandle(c, prefix + h.name + '/', true, top || h, out);
@@ -1457,9 +1501,16 @@ function render() {
 }
 function renderMissing() {
   const missing = tracks.filter(t => !t.file);
-  const k = missing.length;
-  el.missingBar.hidden = !k || building;
-  if (!k) return;
+  el.missingBar.hidden = !missing.length || building;
+  if (!missing.length) return;
+  // Tracks whose paths are too long can only be dragged in (see tooLong); the rest are asked for below.
+  const long = missing.filter(t => tooLong(shownPath(t))), rest = missing.filter(t => !long.includes(t));
+  const k = rest.length;
+  el.missingAddBtn.hidden = !k;
+  if (!k) {
+    el.missingText.textContent = longPathNote(long);
+    return;
+  }
   const locked = accessNeeded();
   const targets = locked.length || !canLink() ? [] : folderTargets();
   const them = plural(k, 'it', 'them');
@@ -1467,7 +1518,7 @@ function renderMissing() {
   if (locked.length) {
     mode = 'allow';
     const where = locked.map(r => `“${baseName(r.path)}”`).join(', ');
-    const n = missing.filter(t => rootsFor(shownPath(t)).some(r => locked.includes(r))).length;
+    const n = rest.filter(t => rootsFor(shownPath(t)).some(r => locked.includes(r))).length;
     el.missingText.textContent = `${k} ${plural(k, "track isn't", "tracks aren't")} loaded yet. ` + (n === k
       ? `Allow this page to read ${where} again to load ${them}.`
       : `${n} of them ${plural(n, 'is', 'are')} in ${where}; allow this page to read ${plural(locked.length, 'that folder', 'those folders')} again to load ${plural(n, 'it', 'them')}.`);
@@ -1484,30 +1535,64 @@ function renderMissing() {
       + (targets.length > 1 ? ` After that, ${targets.length - 1} more ${plural(targets.length - 1, 'folder', 'folders')}.` : '');
   } else if (canLink()) {
     mode = 'choose';
-    const dir = commonDir(missing.map(shownPath));
+    const dir = commonDir(rest.map(shownPath));
     el.missingText.textContent = `${k} ${plural(k, 'track has', 'tracks have')} no audio file on this computer yet. `
       + `Choose the folder that holds ${them}${dir ? ` (${dir})` : ''}, or a folder above it. Anything in it that isn't in the list is left out.`;
   } else {
     el.missingText.textContent = `${k} ${plural(k, 'track has', 'tracks have')} no audio file on this computer yet. `
       + `Drop or add the folder that holds ${them}; a parent folder works too. Files are matched by name and folder, and anything not in the list is left out.`;
   }
-  const long = missing.map(shownPath).filter(tooLong);
   if (long.length) el.missingText.textContent += ' ' + longPathNote(long);
   el.missingAddBtn.dataset.mode = mode;
   el.missingAddBtn.textContent = mode === 'request' ? `Choose “${targets[0].name}”…`
     : { allow: 'Allow access', choose: 'Choose folder…', add: 'Add folder' }[mode];
 }
-// Chrome and Edge can't open a file whose full Windows path is 260 characters or more, even with
-// long paths enabled in Windows, and report it as not found. A junction gives the same folder a
-// short path; the page then reads the files through it and still saves their real full paths.
+// ---------------------------------------------------------------- long paths (Windows)
+// Chrome and Edge can't open a file whose full path is 260 characters or more, even with long paths
+// enabled in Windows, whether through a linked folder, a dropped folder, a picker or a drop. The one
+// way in is dragging the file itself from File Explorer: Explorer then hands over its short (8.3)
+// path, so the file arrives under its short name, like TRACK0~1.MP3. Such a file is matched to the
+// one too-long track it can be; when several fit, it goes onto its track's row.
 const tooLong = p => /^[A-Za-z]:[\\/]/.test(p) && p.length >= 260;
-function longPathNote(paths) {
-  const k = paths.length, dir = commonDir(paths).replace(/\//g, '\\');  // mklink wants backslashes
-  const name = dir ? baseName(dir) : 'Music';
-  return `${k} ${plural(k, 'path is', 'paths are')} 260 or more characters long, which this browser can't open. `
-    + `Give ${plural(k, 'its', 'their')} folder a short path: in Command Prompt run  mkdir C:\\s & mklink /J "C:\\s\\${name}" "${dir || 'C:\\…\\' + name}"  `
-    + `then choose C:\\s\\${name} here (keep its name). The list still saves the real full paths.`;
+const SHORT_NAME = /^([^~.]{1,6})~(\d{1,6})(?:\.([^.]{1,3}))?$/;
+// Whether Windows could have given a file with this long name that short name: the first six
+// characters of the name and three of the extension, without spaces or extra dots, then ~1, ~2...;
+// past four alike, the last four of those six become a hash. Characters an 8.3 name can't hold
+// become "_", and letters beyond ASCII may or may not.
+function shortNameFits(short, long) {
+  const m = SHORT_NAME.exec(short);
+  if (!m || m[1].length + 1 + m[2].length > 8) return false;
+  const dot = long.lastIndexOf('.');
+  const squash = s => s.replace(/[\s.]/g, '').toUpperCase();
+  const name = squash(dot > 0 ? long.slice(0, dot) : long), ext = squash(dot > 0 ? long.slice(dot + 1) : '').slice(0, 3);
+  const begins = (s, full) => s.length <= full.length
+    && s.toUpperCase().split('').every((c, i) => c === full[i] || c === '_' || full.charCodeAt(i) > 127);
+  const stem = m[1], hashed = stem.length === 6 && /^[0-9A-F]{4}$/i.test(stem.slice(2));
+  return (m[3] || '').length === ext.length && begins(m[3] || '', ext)
+    && (begins(stem, name) || (hashed && begins(stem.slice(0, 2), name)));
 }
+// Pairs files that came in under a short name with the too-long paths they fit. A pair is made only
+// when the file fits that one path and no other file fits it; the rest are unsure.
+function matchShortNames(items, paths) {
+  const long = paths.filter(tooLong), pairs = new Map(), unsure = [], claims = new Map();
+  for (const it of items) {
+    if (it.inFolder || !SHORT_NAME.test(it.file.name)) continue;
+    const fits = long.filter(p => shortNameFits(it.file.name, baseName(p)));
+    if (!fits.length) continue;
+    pairs.set(it, fits.length === 1 ? fits[0] : null);
+    if (fits.length === 1) claims.set(fits[0], (claims.get(fits[0]) || 0) + 1);
+  }
+  for (const [it, p] of pairs) if (!p || claims.get(p) > 1) { pairs.delete(it); unsure.push(it); }
+  return { pairs, unsure };
+}
+function longPathNote(list) {
+  const k = list.length, dir = commonDir(list.map(shownPath));
+  return `${k} ${plural(k, "track's path is", "tracks' paths are")} 260 characters or longer, too long for this browser to open from a list or a folder. `
+    + `Open ${dir || plural(k, 'its folder', 'their folders')} in File Explorer and drag ${plural(k, 'the file', 'the files')} onto this page.`;
+}
+const unsureNote = items => `${items.length} ${plural(items.length, 'file', 'files')} came in under a short name (${items[0].file.name}) that more than one track in the list could have. Drag ${plural(items.length, 'it', 'each one')} onto ${plural(items.length, 'its', 'its own')} track's row.`;
+// For files a folder listed but the browser couldn't open.
+const unreadableNote = n => n ? `${n} ${plural(n, 'file', 'files')} couldn't be opened because ${plural(n, 'its path is', 'their paths are')} 260 characters or longer. Drag ${plural(n, 'it', 'them')} onto this page from File Explorer instead.` : '';
 
 function roleOf(i, n) { return i === 0 ? 'start' : i === n - 1 ? 'end' : 'mix'; }
 const ROLE_LABEL = { start: 'Start', mix: 'Mixed', end: 'End' };
@@ -1550,7 +1635,7 @@ function paintRow(li, t, i, n) {
   li.draggable = !building;
   const d = dur(t);
   li.querySelector('.dur').textContent = !t.file ? 'Missing' : d != null ? fmtTime(d) : (t.duration === undefined ? '…' : '–:––');
-  li.querySelector('.dur').title = !t.file ? 'No audio file yet. Add the folder that holds it.' : d != null ? '' : (t.duration === undefined ? 'Reading length' : 'Length is known after the build');
+  li.querySelector('.dur').title = !t.file ? (tooLong(shownPath(t)) ? 'No audio file yet. Drag its file onto this row from File Explorer.' : 'No audio file yet. Add the folder that holds it.') : d != null ? '' : (t.duration === undefined ? 'Reading length' : 'Length is known after the build');
   const play = li.querySelector('.play');
   play.innerHTML = t.id === playingId ? ICON_STOP : ICON_PLAY;
   play.setAttribute('aria-label', t.id === playingId ? 'Stop preview' : 'Preview');
@@ -1791,19 +1876,36 @@ el.list.addEventListener('dragend', () => { dragIds = null; dropAt = -1; clearDr
 
 // dropping files anywhere on the page
 const hasFiles = e => !dragIds && e.dataTransfer && [...e.dataTransfer.types].includes('Files');
+// Over a missing track's row the overlay gives way to the row, so a file can be dropped onto it.
+const missingRowAt = e => building ? null
+  : document.elementsFromPoint(e.clientX, e.clientY).find(n => n.classList.contains('is-missing')) || null;
+function markDropRow(row) {
+  el.list.querySelectorAll('.drop-into').forEach(r => { if (r !== row) r.classList.remove('drop-into'); });
+  if (row) row.classList.add('drop-into');
+}
 window.addEventListener('dragover', e => {
   if (!hasFiles(e)) return;
   e.preventDefault();
   e.dataTransfer.dropEffect = building ? 'none' : 'copy';
-  if (!building) el.dropOverlay.hidden = false;
+  const row = missingRowAt(e);
+  markDropRow(row);
+  el.dropOverlay.hidden = building || !!row;
 });
-el.dropOverlay.addEventListener('dragleave', e => { if (e.target === el.dropOverlay) el.dropOverlay.hidden = true; });
+window.addEventListener('dragleave', e => {
+  if (e.clientX > 0 && e.clientY > 0 && e.clientX < innerWidth && e.clientY < innerHeight) return;   // still on the page
+  markDropRow(null);
+  el.dropOverlay.hidden = true;
+});
 window.addEventListener('drop', async e => {
   if (!hasFiles(e)) return;
   e.preventDefault();
+  const row = missingRowAt(e), t = row && tracks.find(x => x.id === row.dataset.id);
+  markDropRow(null);
   el.dropOverlay.hidden = true;
   if (building) return;
-  handleIncoming(await itemsFromDrop(e.dataTransfer));
+  const items = await itemsFromDrop(e.dataTransfer);
+  if (t) dropOnTrack(t, items);
+  else handleIncoming(items);
 });
 
 // ---------------------------------------------------------------- buttons
