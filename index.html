@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Interapp Audio Merger</title>
-<script>try{var t=localStorage.getItem('interapp.theme');if(t==='light'||t==='dark')document.documentElement.dataset.theme=t}catch(e){}</script>
+<script>try{var t=localStorage.getItem('interapp.theme');if(t==='light'||t==='dark')document.documentElement.dataset.theme=t;var l=localStorage.getItem('interapp.lang');document.documentElement.lang=l==='ru'||(l!=='en'&&/^ru\b/i.test(navigator.language))?'ru':'en'}catch(e){}</script>
 <meta name="description" content="Merge audio files in the browser: the first track plays, every middle track plays at the same time, then the last track plays.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -65,6 +65,12 @@ button,input,select{font:inherit;color:inherit}
 .top{display:grid;gap:16px}
 .head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
 .brand{display:grid;gap:6px;min-width:0}
+.head-tools{display:flex;align-items:center;gap:8px;flex:none}
+.lang-switch{display:inline-flex;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--surface);overflow:hidden}
+.lang-switch button{min-width:38px;height:32px;padding:0 8px;border:0;background:transparent;color:var(--muted);font:600 12.5px var(--font-body);letter-spacing:.04em;cursor:pointer}
+.lang-switch button:hover{background:var(--sunken);color:var(--ink)}
+.lang-switch button[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink)}
+.lang-switch button:focus-visible{outline-offset:-2px}
 .theme-btn{flex:none;width:34px;height:34px;min-height:0}
 .theme-btn svg{width:16px;height:16px}
 h1{margin:0;font:800 clamp(30px,4.2vw,42px)/1 var(--font-display);letter-spacing:-.025em;text-wrap:balance}
@@ -241,15 +247,21 @@ footer:not(:has(#backupNote:not(:empty), #rootsBox:not([hidden]))){display:none}
     <div class="head">
       <div class="brand">
         <h1>Interapp</h1>
-        <p class="lede">Joins audio files into one: the <b class="t-start">first</b> track plays alone, every <b class="t-mix">middle</b> track plays at the same time, then the <b class="t-end">last</b> track plays alone.</p>
+        <p class="lede" data-i18n-html="lede"></p>
       </div>
-      <button type="button" class="btn icon theme-btn" id="themeBtn"></button>
+      <div class="head-tools">
+        <div class="lang-switch" role="group" data-i18n-aria="language" aria-label="Language">
+          <button type="button" data-lang="en" title="English" aria-pressed="true">EN</button>
+          <button type="button" data-lang="ru" title="Русский" aria-pressed="false">RU</button>
+        </div>
+        <button type="button" class="btn icon theme-btn" id="themeBtn"></button>
+      </div>
     </div>
-    <section class="arrangement" aria-label="Arrangement of the output file">
+    <section class="arrangement" data-i18n-aria="arrangementLabel" aria-label="Arrangement of the output file">
       <div class="lane" id="lane" aria-hidden="true">
-        <div class="seg seg-start" id="segStart"><span class="seg-label">Start</span></div>
+        <div class="seg seg-start" id="segStart"><span class="seg-label" data-i18n="start">Start</span></div>
         <div class="seg seg-mix" id="segMix"><div class="layers" id="layers"></div></div>
-        <div class="seg seg-end" id="segEnd"><span class="seg-label">End</span></div>
+        <div class="seg seg-end" id="segEnd"><span class="seg-label" data-i18n="end">End</span></div>
       </div>
       <div class="legend" id="legend"></div>
     </section>
@@ -257,145 +269,544 @@ footer:not(:has(#backupNote:not(:empty), #rootsBox:not([hidden]))){display:none}
 
   <section class="panel gate" id="gate" aria-labelledby="gateTitle" hidden>
     <div class="gate-step" id="gatePick">
-      <h2 id="gateTitle">Link your audio folder</h2>
-      <p>Link the one folder that holds all your audio, like <code>D:\Audio</code>. From then on, any list whose tracks are in a folder of that name loads from it by itself, even a list saved on another computer. You only do this once.</p>
-      <button type="button" class="btn primary build" id="gateBtn">Link root audio folder</button>
-      <p class="gate-note">Chrome won't link <code>C:\</code>, your user folder, or Documents, Desktop and Downloads themselves. Choose a folder inside them instead.</p>
+      <h2 id="gateTitle" data-i18n="gateTitle">Link your audio folder</h2>
+      <p data-i18n-html="gateText"></p>
+      <button type="button" class="btn primary build" id="gateBtn" data-i18n="gateBtn">Link root audio folder</button>
+      <p class="gate-note" data-i18n-html="gateNote"></p>
     </div>
     <form class="gate-step" id="gateForm" hidden>
-      <h2>Link audio folder</h2>
+      <h2 data-i18n="gateFormTitle">Link audio folder</h2>
       <div class="path-form">
-        <input id="gateInput" type="text" spellcheck="false" autocomplete="off" aria-label="Full path of the folder">
-        <button type="button" class="btn" id="gateChooseBtn">Choose folder…</button>
-        <button type="submit" class="btn primary">Link</button>
+        <input id="gateInput" type="text" spellcheck="false" autocomplete="off" data-i18n-aria="folderPathLabel" aria-label="Full path of the folder">
+        <button type="button" class="btn" id="gateChooseBtn" data-i18n="chooseFolder">Choose folder…</button>
+        <button type="submit" class="btn primary" data-i18n="link">Link</button>
       </div>
       <p class="path-err" id="gateErr" role="alert" hidden></p>
     </form>
   </section>
 
   <main class="work">
-    <section class="panel tracks" id="tracksPanel" aria-label="Tracks">
+    <section class="panel tracks" id="tracksPanel" data-i18n-aria="tracksLabel" aria-label="Tracks">
       <div class="toolbar">
         <div class="group">
-          <button type="button" class="btn primary" id="addFilesBtn">Add files</button>
-          <button type="button" class="btn" id="addFolderBtn">Add folder</button>
-          <button type="button" class="btn" id="loadListBtn" title="Open a saved list of file paths (.txt)">Load list</button>
+          <button type="button" class="btn primary" id="addFilesBtn" data-i18n="addFiles">Add files</button>
+          <button type="button" class="btn" id="addFolderBtn" data-i18n="addFolder">Add folder</button>
+          <button type="button" class="btn" id="loadListBtn" data-i18n="loadList" data-i18n-title="loadListTitle" title="Open a saved list of file paths (.txt)">Load list</button>
           <input type="file" id="fileInput" multiple accept=".mp3,.wav,.ogg,.flac,.m4a,.aac,.txt,audio/*,text/plain" hidden>
           <input type="file" id="folderInput" multiple webkitdirectory hidden>
           <input type="file" id="listInput" accept=".txt,text/plain" hidden>
         </div>
-        <div class="group" role="group" aria-label="Move selected tracks">
-          <button type="button" class="btn icon" id="topBtn" title="Move to top (makes it the start track)" aria-label="Move to top">
+        <div class="group" role="group" data-i18n-aria="moveLabel" aria-label="Move selected tracks">
+          <button type="button" class="btn icon" id="topBtn" data-i18n-title="toTopTitle" data-i18n-aria="toTop" title="Move to top (makes it the start track)" aria-label="Move to top">
             <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 2.5h10M8 14V6M4.5 9.5 8 6l3.5 3.5"/></svg>
           </button>
-          <button type="button" class="btn icon" id="upBtn" title="Move up (Alt+↑)" aria-label="Move up">
+          <button type="button" class="btn icon" id="upBtn" data-i18n-title="upTitle" data-i18n-aria="up" title="Move up (Alt+↑)" aria-label="Move up">
             <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M8 13.5V3M4 7l4-4 4 4"/></svg>
           </button>
-          <button type="button" class="btn icon" id="downBtn" title="Move down (Alt+↓)" aria-label="Move down">
+          <button type="button" class="btn icon" id="downBtn" data-i18n-title="downTitle" data-i18n-aria="down" title="Move down (Alt+↓)" aria-label="Move down">
             <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2.5V13M4 9l4 4 4-4"/></svg>
           </button>
-          <button type="button" class="btn icon" id="bottomBtn" title="Move to bottom (makes it the end track)" aria-label="Move to bottom">
+          <button type="button" class="btn icon" id="bottomBtn" data-i18n-title="toBottomTitle" data-i18n-aria="toBottom" title="Move to bottom (makes it the end track)" aria-label="Move to bottom">
             <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 13.5h10M8 2v8M4.5 6.5 8 10l3.5-3.5"/></svg>
           </button>
-          <button type="button" class="btn" id="removeBtn">Remove</button>
+          <button type="button" class="btn" id="removeBtn" data-i18n="remove">Remove</button>
         </div>
         <div class="group push">
-          <span class="count" id="countLabel" aria-live="polite">0 tracks</span>
-          <button type="button" class="btn" id="saveListBtn" title="Download the list as backup.txt, one full path per line">Save list</button>
-          <button type="button" class="btn ghost" id="clearBtn">Clear</button>
+          <span class="count" id="countLabel" aria-live="polite"></span>
+          <button type="button" class="btn" id="saveListBtn" data-i18n="saveList" data-i18n-title="saveListTitle" title="Download the list as backup.txt, one full path per line">Save list</button>
+          <button type="button" class="btn ghost" id="clearBtn" data-i18n="clear">Clear</button>
         </div>
       </div>
 
       <div class="bar-note" id="restoreBar" hidden>
-        <p id="restoreText">Your last list is saved in this browser.</p>
+        <p id="restoreText"></p>
         <div class="actions">
-          <button type="button" class="btn primary" id="restoreBtn">Restore</button>
-          <button type="button" class="btn" id="discardBtn">Discard</button>
+          <button type="button" class="btn primary" id="restoreBtn" data-i18n="restore">Restore</button>
+          <button type="button" class="btn" id="discardBtn" data-i18n="discard">Discard</button>
         </div>
       </div>
       <div class="bar-note warn" id="clearBar" hidden>
-        <p id="clearText">Remove every track from the list?</p>
+        <p id="clearText"></p>
         <div class="actions">
-          <button type="button" class="btn danger" id="clearYes">Clear list</button>
-          <button type="button" class="btn" id="clearNo">Cancel</button>
+          <button type="button" class="btn danger" id="clearYes" data-i18n="clearList">Clear list</button>
+          <button type="button" class="btn" id="clearNo" data-i18n="cancel">Cancel</button>
         </div>
       </div>
       <div class="bar-note warn" id="missingBar" hidden>
         <p id="missingText"></p>
         <div class="actions">
-          <button type="button" class="btn primary" id="missingAddBtn">Add folder</button>
-          <button type="button" class="btn" id="missingRemoveBtn">Remove missing</button>
+          <button type="button" class="btn primary" id="missingAddBtn" data-i18n="addFolder">Add folder</button>
+          <button type="button" class="btn" id="missingRemoveBtn" data-i18n="removeMissing">Remove missing</button>
         </div>
       </div>
       <div class="bar-note" id="pathBar" hidden>
         <p id="pathText"></p>
         <div class="actions" id="pathActions">
-          <button type="button" class="btn primary" id="pathPickBtn">Choose folder…</button>
-          <button type="button" class="btn" id="pathLaterBtn">Not now</button>
+          <button type="button" class="btn primary" id="pathPickBtn" data-i18n="chooseFolder">Choose folder…</button>
+          <button type="button" class="btn" id="pathLaterBtn" data-i18n="notNow">Not now</button>
         </div>
         <form class="path-form" id="pathForm" hidden>
-          <input id="pathInput" type="text" spellcheck="false" autocomplete="off" aria-label="Full path of the folder">
-          <button type="submit" class="btn primary">Save</button>
-          <button type="button" class="btn" id="pathCancelBtn">Not now</button>
+          <input id="pathInput" type="text" spellcheck="false" autocomplete="off" data-i18n-aria="folderPathLabel" aria-label="Full path of the folder">
+          <button type="submit" class="btn primary" data-i18n="save">Save</button>
+          <button type="button" class="btn" id="pathCancelBtn" data-i18n="notNow">Not now</button>
         </form>
         <p class="path-err" id="pathErr" role="alert" hidden></p>
       </div>
-      <div class="bar-note" id="notice" hidden><p id="noticeText"></p><div class="actions"><button type="button" class="btn primary" id="noticeAction" hidden></button><button type="button" class="btn ghost" id="noticeClose">OK</button></div></div>
+      <div class="bar-note" id="notice" hidden><p id="noticeText"></p><div class="actions"><button type="button" class="btn primary" id="noticeAction" hidden></button><button type="button" class="btn ghost" id="noticeClose" data-i18n="ok">OK</button></div></div>
 
-      <ol class="list" id="list" tabindex="0" role="listbox" aria-multiselectable="true" aria-label="Tracks in build order" hidden></ol>
+      <ol class="list" id="list" tabindex="0" role="listbox" aria-multiselectable="true" data-i18n-aria="listLabel" aria-label="Tracks in build order" hidden></ol>
 
       <div class="empty" id="empty">
-        <h2>Drop audio files here</h2>
-        <p>MP3, WAV, OGG, FLAC, M4A or AAC. Drop a whole folder to add everything in it, sorted by name. To reopen a saved list, drop its .txt here.</p>
+        <h2 data-i18n="emptyTitle">Drop audio files here</h2>
+        <p data-i18n="emptyText"></p>
         <div class="group">
-          <button type="button" class="btn primary" id="emptyAddBtn">Choose files</button>
-          <button type="button" class="btn" id="sampleBtn">Try with sample tones</button>
+          <button type="button" class="btn primary" id="emptyAddBtn" data-i18n="chooseFiles">Choose files</button>
+          <button type="button" class="btn" id="sampleBtn" data-i18n="sample">Try with sample tones</button>
         </div>
       </div>
 
-      <p class="hint">Click to select. <kbd>Ctrl</kbd>/<kbd>⌘</kbd> or <kbd>Shift</kbd>-click selects several. Drag rows to reorder. <kbd>Alt</kbd>+<kbd>↑</kbd>/<kbd>↓</kbd> moves the selection, <kbd>Delete</kbd> removes it, <kbd>Space</kbd> previews.</p>
+      <p class="hint" data-i18n-html="hint"></p>
     </section>
 
-    <aside class="panel mixdown" aria-label="Build">
-      <h2>Build</h2>
+    <aside class="panel mixdown" data-i18n-aria="build" aria-label="Build">
+      <h2 data-i18n="build">Build</h2>
       <div class="field">
-        <label for="outName">File name</label>
+        <label for="outName" data-i18n="fileName">File name</label>
         <div class="name-field"><input id="outName" type="text" value="combined" spellcheck="false" autocomplete="off"><span id="extLabel">.mp3</span></div>
       </div>
       <div class="field">
-        <label for="format">Format</label>
+        <label for="format" data-i18n="format">Format</label>
         <select id="format">
-          <option value="mp3-64" selected>MP3 · 64 kbps (desktop app setting)</option>
-          <option value="mp3-128">MP3 · 128 kbps</option>
-          <option value="mp3-192">MP3 · 192 kbps</option>
-          <option value="wav">WAV · 16-bit, uncompressed</option>
+          <option value="mp3-64" data-i18n="fmt.mp3-64" selected>MP3 · 64 kbps (desktop app setting)</option>
+          <option value="mp3-128" data-i18n="fmt.mp3-128">MP3 · 128 kbps</option>
+          <option value="mp3-192" data-i18n="fmt.mp3-192">MP3 · 192 kbps</option>
+          <option value="wav" data-i18n="fmt.wav">WAV · 16-bit, uncompressed</option>
         </select>
       </div>
       <dl class="summary">
-        <dt>Output length</dt><dd id="sumLength">—</dd>
-        <dt>Tracks</dt><dd id="sumTracks">0 of 3 needed</dd>
-        <dt>Estimated size</dt><dd id="sumSize">—</dd>
+        <dt data-i18n="sumLength">Output length</dt><dd id="sumLength">—</dd>
+        <dt data-i18n="sumTracks">Tracks</dt><dd id="sumTracks"></dd>
+        <dt data-i18n="sumSize">Estimated size</dt><dd id="sumSize">—</dd>
       </dl>
-      <button type="button" class="btn primary build" id="buildBtn" disabled>Build</button>
-      <div class="progress" id="progress" role="progressbar" aria-label="Build progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div class="fill" id="bar"></div></div>
-      <p class="status" id="status" aria-live="polite">Add at least 3 tracks to build.</p>
+      <button type="button" class="btn primary build" id="buildBtn" data-i18n="build" disabled>Build</button>
+      <div class="progress" id="progress" role="progressbar" data-i18n-aria="progress" aria-label="Build progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div class="fill" id="bar"></div></div>
+      <p class="status" id="status" aria-live="polite"></p>
       <p class="error" id="error" role="alert" hidden></p>
       <div class="result" id="result" hidden>
         <audio id="resultAudio" controls preload="metadata"></audio>
         <p class="meta" id="resultMeta"></p>
-        <button type="button" class="btn primary" id="downloadBtn">Download</button>
+        <button type="button" class="btn primary" id="downloadBtn" data-i18n="download">Download</button>
         <p class="dl-note" id="dlNote" hidden></p>
       </div>
     </aside>
   </main>
 
   <footer>
-    <ul class="roots" id="rootsBox" aria-label="Linked folders" hidden></ul>
+    <ul class="roots" id="rootsBox" data-i18n-aria="linkedFolders" aria-label="Linked folders" hidden></ul>
     <p id="backupNote"></p>
   </footer>
 </div>
 
-<div class="drop-overlay" id="dropOverlay" hidden><div>Drop audio files, folders or a saved list</div></div>
+<div class="drop-overlay" id="dropOverlay" hidden><div data-i18n="dropOverlay">Drop audio files, folders or a saved list</div></div>
+
+<script>
+// ---------------------------------------------------------------- translations
+// Every visible string lives here, in English and Russian. Static markup is filled in from
+// data-i18n* attributes; the rest of the page asks for strings with i18n.t(key, params).
+// Entries are plain strings or functions of the params (for plurals and word agreement).
+const i18n = (() => {
+  const en = (n, one, many) => n === 1 ? one : many;
+  const ruOne = n => n % 10 === 1 && n % 100 !== 11;
+  const ru = (n, one, few, many) => {
+    const m = n % 10, h = n % 100;
+    return m === 1 && h !== 11 ? one : m >= 2 && m <= 4 && (h < 12 || h > 14) ? few : many;
+  };
+  const DICT = {
+    en: {
+      title: 'Interapp Audio Merger',
+      metaDesc: 'Merge audio files in the browser: the first track plays, every middle track plays at the same time, then the last track plays.',
+      lede: 'Joins audio files into one: the <b class="t-start">first</b> track plays alone, every <b class="t-mix">middle</b> track plays at the same time, then the <b class="t-end">last</b> track plays alone.',
+      language: 'Language',
+      q: s => `“${s}”`,
+      arrangementLabel: 'Arrangement of the output file',
+      start: 'Start', mixed: 'Mixed', end: 'End',
+      gateTitle: 'Link your audio folder',
+      gateText: 'Link the one folder that holds all your audio, like <code>D:\\Audio</code>. From then on, any list whose tracks are in a folder of that name loads from it by itself, even a list saved on another computer. You only do this once.',
+      gateBtn: 'Link root audio folder',
+      gateNote: 'Chrome won\'t link <code>C:\\</code>, your user folder, or Documents, Desktop and Downloads themselves. Choose a folder inside them instead.',
+      gateFormTitle: 'Link audio folder',
+      folderPathLabel: 'Full path of the folder',
+      chooseFolder: 'Choose folder…',
+      link: 'Link',
+      tracksLabel: 'Tracks',
+      addFiles: 'Add files', addFolder: 'Add folder',
+      loadList: 'Load list', loadListTitle: 'Open a saved list of file paths (.txt)',
+      moveLabel: 'Move selected tracks',
+      toTop: 'Move to top', toTopTitle: 'Move to top (makes it the start track)',
+      up: 'Move up', upTitle: 'Move up (Alt+↑)',
+      down: 'Move down', downTitle: 'Move down (Alt+↓)',
+      toBottom: 'Move to bottom', toBottomTitle: 'Move to bottom (makes it the end track)',
+      remove: 'Remove',
+      saveList: 'Save list', saveListTitle: 'Download the list as backup.txt, one full path per line',
+      clear: 'Clear',
+      restore: 'Restore', discard: 'Discard',
+      clearList: 'Clear list', cancel: 'Cancel',
+      removeMissing: 'Remove missing',
+      notNow: 'Not now', save: 'Save', ok: 'OK', undo: 'Undo',
+      listLabel: 'Tracks in build order',
+      emptyTitle: 'Drop audio files here',
+      emptyText: 'MP3, WAV, OGG, FLAC, M4A or AAC. Drop a whole folder to add everything in it, sorted by name. To reopen a saved list, drop its .txt here.',
+      chooseFiles: 'Choose files',
+      sample: 'Try with sample tones',
+      hint: 'Click to select. <kbd>Ctrl</kbd>/<kbd>⌘</kbd> or <kbd>Shift</kbd>-click selects several. Drag rows to reorder. <kbd>Alt</kbd>+<kbd>↑</kbd>/<kbd>↓</kbd> moves the selection, <kbd>Delete</kbd> removes it, <kbd>Space</kbd> previews.',
+      build: 'Build',
+      fileName: 'File name', format: 'Format',
+      'fmt.mp3-64': 'MP3 · 64 kbps (desktop app setting)',
+      'fmt.mp3-128': 'MP3 · 128 kbps',
+      'fmt.mp3-192': 'MP3 · 192 kbps',
+      'fmt.wav': 'WAV · 16-bit, uncompressed',
+      sumLength: 'Output length', sumTracks: 'Tracks', sumSize: 'Estimated size',
+      progress: 'Build progress',
+      download: 'Download',
+      linkedFolders: 'Linked folders',
+      dropOverlay: 'Drop audio files, folders or a saved list',
+      preview: 'Preview', stopPreview: 'Stop preview', stop: 'Stop',
+      themeLight: 'Switch to light mode', themeDark: 'Switch to dark mode',
+      decimal: '.', unitB: 'B', unitKB: 'KB', unitMB: 'MB', unitGB: 'GB',
+      'dir.desktop': 'Desktop', 'dir.documents': 'Documents', 'dir.downloads': 'Downloads',
+      'dir.music': 'Music', 'dir.pictures': 'Pictures', 'dir.videos': 'Videos',
+
+      backupOff: "This browser isn't keeping a backup (storage is blocked or full). Use Save list to keep a copy of the list.",
+      backupListOnly: "The list is backed up in this browser, but there wasn't room for the audio. After a reload, add the folder again to fill it in.",
+      restoreText: ({ c, size, noAudio }) => `Your last list (${c} ${en(c, 'track', 'tracks')}${size ? ', ' + size : ''}) is saved in this browser`
+        + (noAudio ? `; ${noAudio} of them will need their folder added again` : '') + '. Restore it? Adding new files discards it.',
+      rootsLabel: ({ n }) => n === 1 ? 'Linked folder:' : 'Linked folders:',
+      unlink: 'Unlink',
+      unlinkTitle: ({ path }) => `Stop reading audio from ${path}`,
+      loadedTracks: ({ n, still }) => `Loaded ${n} ${en(n, 'track', 'tracks')}${still ? `; ${still} still missing` : ''}.`,
+      noneFoundIn: ({ where }) => `None of the missing tracks were found in ${where}.`,
+      linkedFound: ({ path, n, still }) => `Linked ${path}: found ${n} missing ${en(n, 'track', 'tracks')}${still ? `; ${still} still missing` : ''}.`,
+      notOnDrive: 'None of the missing tracks were found there. Choose the folder that holds them rather than a whole drive.',
+      cantReadFolder: ({ name }) => `Couldn't read the folder “${name}”.`,
+      noneInFolder: ({ name }) => `None of the missing tracks were found in “${name}”.`,
+      pathAsk: ({ name }) => `Where is the folder “${name}” on this computer? Saved lists hold each track's full path, so paste the folder's path once. In File Explorer, select the folder and press Ctrl+Shift+C to copy it.`,
+      pathNoFolder: ({ k }) => `${k} ${en(k, 'track was', 'tracks were')} added without ${en(k, 'its', 'their')} folder, so a saved list can't find ${en(k, 'it', 'them')} again. Choose the folder ${en(k, 'it is', 'they are')} in, or a folder above it.`,
+      linkedRoot: ({ p }) => `Linked ${p}. Lists with tracks inside it now load by themselves.`,
+      pathNotAbs: ({ name }) => `Paste the folder's full path, starting with the drive, like C:\\…\\${name}.`,
+      pathWrongName: ({ base, name }) => `That path ends in “${base}”, but the folder is “${name}”.`,
+      pathLinked: ({ p, n }) => `Linked ${p}.` + (n ? ` ${n} ${en(n, 'track now has its', 'tracks now have their')} full path.` : ''),
+      noneInDir: ({ k, name }) => `None of the ${k} ${en(k, 'track', 'tracks')} without a full path ${en(k, 'is', 'are')} in “${name}”.`,
+      relNoPath: ({ k, fix }) => `${k} ${en(k, 'track has', 'tracks have')} no full path in the list, so it can't load ${en(k, 'it', 'them')} by itself.`
+        + (fix ? ` Link the folder ${en(k, 'it is', 'they are')} in to fix that.` : ''),
+      relNoLink: ({ k }) => `This browser doesn't tell pages where files are, so ${k} ${en(k, 'track is', 'tracks are')} listed by folder and file name only. Chrome and Edge can save full paths.`,
+
+      missAllow: ({ k, n, where, nFolders }) => `${k} ${en(k, "track isn't", "tracks aren't")} loaded yet. ` + (n === k
+        ? `Allow this page to read ${where} again to load ${en(k, 'it', 'them')}.`
+        : `${n} of them ${en(n, 'is', 'are')} in ${where}; allow this page to read ${en(nFolders, 'that folder', 'those folders')} again to load ${en(n, 'it', 'them')}.`),
+      missRequest: ({ k, n, where, folder, known, depth, more }) => `${k} ${en(k, "track isn't", "tracks aren't")} loaded yet. `
+        + `${n === k ? en(k, "It's", "They're") : `${n} of them ${en(n, 'is', 'are')}`} in ${where}. `
+        + (known && !depth ? `To let this page read ${en(n, 'it', 'them')}, allow ${folder || 'that folder'}: the folder picker opens right in it, so just press Select Folder.`
+          : `To let this page read ${en(n, 'it', 'them')}, choose ${folder || 'that folder'} in the folder picker${known ? `, which opens in your ${DICT.en['dir.' + known]} folder` : ''}.`)
+        + (more ? ` After that, ${more} more ${en(more, 'folder', 'folders')}.` : ''),
+      missChoose: ({ k, dir }) => `${k} ${en(k, 'track has', 'tracks have')} no audio file on this computer yet. `
+        + `Choose the folder that holds ${en(k, 'it', 'them')}${dir ? ` (${dir})` : ''}, or a folder above it. Anything in it that isn't in the list is left out.`,
+      missAdd: ({ k }) => `${k} ${en(k, 'track has', 'tracks have')} no audio file on this computer yet. `
+        + `Drop or add the folder that holds ${en(k, 'it', 'them')}; a parent folder works too. Files are matched by name and folder, and anything not in the list is left out.`,
+      chooseNamed: ({ name }) => `Choose “${name}”…`,
+      allowAccess: 'Allow access',
+      longPath: ({ k, dir }) => `${k} ${en(k, "track's path is", "tracks' paths are")} 260 characters or longer, too long for this browser to open from a list or a folder. `
+        + `Open ${dir || en(k, 'its folder', 'their folders')} in File Explorer and drag ${en(k, 'the file', 'the files')} onto this page.`,
+      unsure: ({ n, name }) => `${n} ${en(n, 'file', 'files')} came in under a short name (${name}) that more than one track in the list could have. Drag ${en(n, 'it', 'each one')} onto ${en(n, 'its', 'its own')} track's row.`,
+      unreadable: ({ n }) => `${n} ${en(n, 'file', 'files')} couldn't be opened because ${en(n, 'its path is', 'their paths are')} 260 characters or longer. Drag ${en(n, 'it', 'them')} onto this page from File Explorer instead.`,
+
+      noAudioAdded: 'No audio files were found in what you added.',
+      strays: ({ n }) => `Skipped ${n} ${en(n, "file that isn't", "files that aren't")} audio (MP3, WAV, OGG, FLAC, M4A, AAC) or a list (.txt).`,
+      onlyOneList: ({ name }) => `Only one list can be loaded at a time, so ${name} was used.`,
+      foundMissing: ({ n, still }) => `Found ${n} missing ${en(n, 'track', 'tracks')}${still ? `; ${still} still missing` : ''}.`,
+      sharesName: ({ n }) => `${n} ${en(n, 'track shares its', 'tracks share their')} file name with other tracks in the list. Add the folder that holds ${en(n, 'it', 'them')} so they can be told apart.`,
+      leftOut: ({ n }) => `Left out ${n} ${en(n, "file that isn't", "files that aren't")} in the list.`,
+      noneMatch: 'None of these files match a missing track.',
+      dupes: ({ n }) => `${n} ${en(n, 'file was', 'files were')} already in the list.`,
+      cantReadFile: ({ name }) => `Couldn't read ${name}.`,
+      listNoAudio: ({ name }) => `${name} doesn't list any audio files. A list has one file path per line.`,
+      loadedAll: ({ name, n }) => `Loaded ${name}: all ${n} tracks found.`,
+      loadedSome: ({ name, found, n }) => `Loaded ${name}: found ${found} of ${n} tracks.`,
+      readFromRoot: ({ k, path, name }) => `Read ${k} ${en(k, 'track', 'tracks')} from ${path}; the list has ${en(k, 'it', 'them')} in another folder named “${name}”.`,
+      sharesName2: ({ n }) => `${n} ${en(n, 'track shares its', 'tracks share their')} file name with other tracks, so ${en(n, 'it needs its', 'they need their')} folder to be told apart.`,
+      leftOutAudio: ({ n }) => `Left out ${n} audio ${en(n, "file that isn't", "files that aren't")} in the list.`,
+      skippedLines: ({ n }) => `Skipped ${n} ${en(n, "line that isn't", "lines that aren't")} an audio file path.`,
+      loadedOne: ({ name, still }) => `Loaded ${name}${still ? `; ${still} ${en(still, 'track', 'tracks')} still missing` : ''}.`,
+      cantPreview: ({ name }) => `"${name}" can't be previewed in this browser.`,
+      savedList: ({ note }) => `Saved backup.txt. ${note}`,
+      noMp3: "The MP3 encoder couldn't load (no internet connection?), so only WAV is available.",
+
+      clearConfirm: ({ n }) => `Remove all ${n} ${en(n, 'track', 'tracks')} from the list?`,
+      role: { start: 'Start', mix: 'Mixed', end: 'End' },
+      missing: 'Missing',
+      missingTipLong: 'No audio file yet. Drag its file onto this row from File Explorer.',
+      missingTip: 'No audio file yet. Add the folder that holds it.',
+      readingLength: 'Reading length',
+      lengthAfterBuild: 'Length is known after the build',
+
+      lgStart: 'plays first, alone', lgMix: 'the middle tracks, all at once', lgEnd: 'plays last, alone',
+      moreNeeded: ({ m }) => `${m} more ${en(m, 'track', 'tracks')} needed`,
+      addThree: 'Add 3 or more tracks',
+      mixedCount: ({ k }) => `${k} mixed`,
+      longest: ({ time }) => `longest ${time}`,
+      output: 'Output',
+      tracksMissing: 'tracks missing',
+      measuring: 'measuring…',
+      afterBuild: 'known after build',
+      sumTracksFew: ({ n }) => `${n} of 3 needed`,
+      sumTracksMissing: ({ n, missing }) => `${n}, ${missing} missing`,
+      sumTracksOk: ({ n }) => `1 + ${n - 2} mixed + 1`,
+      statusFew: 'Add at least 3 tracks to build.',
+      statusMissing: ({ missing }) => `Add the audio for ${missing} missing ${en(missing, 'track', 'tracks')} to build.`,
+      statusReady: 'Ready to build.',
+      count: ({ n, k }) => `${n} ${en(n, 'track', 'tracks')}` + (k > 1 ? ` · ${k} selected` : ''),
+
+      errFew: 'Add at least 3 tracks: a start track, one or more tracks to mix, and an end track.',
+      errNoFile: ({ name }) => `"${name}" has no audio file yet. Add the folder that holds the missing tracks, or remove them from the list.`,
+      errNoEncoder: "The MP3 encoder didn't load, probably because the page is offline. Reload with an internet connection, or choose WAV.",
+      errNoDecode: "This browser can't decode audio. Try a current version of Chrome, Edge, Firefox or Safari.",
+      errRead: ({ name }) => `Couldn't read "${name}". The file may be damaged, or this browser can't decode its format. Remove it from the list, or re-save it as MP3 or WAV.`,
+      errMemory: 'The browser ran out of memory for this much audio. Choose MP3 · 64 kbps, which uses about half the memory, or build from fewer or shorter tracks.',
+      errOther: ({ msg }) => `Something went wrong while building: ${msg}`,
+      mixing: ({ i, n, name }) => `Mixing ${i} of ${n}: ${name}`,
+      readStart: ({ name }) => `Reading start track: ${name}`,
+      readEnd: ({ name }) => `Reading end track: ${name}`,
+      encoding: ({ kbps }) => `Encoding MP3 at ${kbps} kbps`,
+      writingWav: 'Writing WAV',
+      built: ({ time, s }) => `Built ${time} of audio in ${s} s.`,
+      cancelled: 'Build cancelled.',
+      stopped: 'Build stopped.',
+      cancelling: 'Cancelling…',
+      dlZip: ({ base }) => `Download ${base}.zip`,
+      dlFile: ({ name }) => `Download ${name}`,
+      zipNote: ({ base, ext }) => `The zip holds ${base}${ext} and ${base}.txt, the track list. This viewer can't save audio files directly.`,
+      fileNote: ({ base }) => `Also saves ${base}.txt with each track's full path. Drop it here later to load this build again and edit it.`,
+      savedFile: ({ name }) => `Saved ${name}.`,
+      dlDeclined: 'Download cancelled.',
+      dlBusy: 'A save prompt is already open.',
+      dlTooLarge: 'The file is too large for this viewer to save. Open the page from its own address to download it.',
+      dlFailed: "This viewer can't save files. Open the page from its own address to download it.",
+    },
+
+    ru: {
+      title: 'Interapp — объединение аудио',
+      metaDesc: 'Объединяйте аудиофайлы прямо в браузере: сначала звучит первый трек, затем одновременно все средние, в конце — последний.',
+      lede: 'Склеивает аудиофайлы в один: сначала звучит <b class="t-start">первый</b> трек, затем одновременно играют все <b class="t-mix">средние</b>, а в конце — <b class="t-end">последний</b>.',
+      language: 'Язык',
+      q: s => `«${s}»`,
+      arrangementLabel: 'Структура итогового файла',
+      start: 'Начало', mixed: 'Микс', end: 'Конец',
+      gateTitle: 'Подключите папку с аудио',
+      gateText: 'Подключите одну папку, в которой лежит всё ваше аудио, например <code>D:\\Audio</code>. После этого любой список, треки которого лежат в папке с таким именем, будет загружаться из неё автоматически — даже если список сохранён на другом компьютере. Это делается один раз.',
+      gateBtn: 'Подключить корневую папку с аудио',
+      gateNote: 'Chrome не позволяет подключить <code>C:\\</code>, папку пользователя, а также сами папки «Документы», «Рабочий стол» и «Загрузки». Выберите папку внутри них.',
+      gateFormTitle: 'Подключение папки с аудио',
+      folderPathLabel: 'Полный путь к папке',
+      chooseFolder: 'Выбрать папку…',
+      link: 'Подключить',
+      tracksLabel: 'Треки',
+      addFiles: 'Добавить файлы', addFolder: 'Добавить папку',
+      loadList: 'Загрузить список', loadListTitle: 'Открыть сохранённый список путей к файлам (.txt)',
+      moveLabel: 'Переместить выбранные треки',
+      toTop: 'В начало', toTopTitle: 'В начало (станет начальным треком)',
+      up: 'Вверх', upTitle: 'Вверх (Alt+↑)',
+      down: 'Вниз', downTitle: 'Вниз (Alt+↓)',
+      toBottom: 'В конец', toBottomTitle: 'В конец (станет конечным треком)',
+      remove: 'Удалить',
+      saveList: 'Сохранить список', saveListTitle: 'Скачать список как backup.txt, по одному полному пути в строке',
+      clear: 'Очистить',
+      restore: 'Восстановить', discard: 'Отбросить',
+      clearList: 'Очистить список', cancel: 'Отмена',
+      removeMissing: 'Убрать отсутствующие',
+      notNow: 'Не сейчас', save: 'Сохранить', ok: 'OK', undo: 'Отменить',
+      listLabel: 'Треки в порядке сборки',
+      emptyTitle: 'Перетащите сюда аудиофайлы',
+      emptyText: 'MP3, WAV, OGG, FLAC, M4A или AAC. Перетащите папку целиком, чтобы добавить всё из неё по порядку имён. Чтобы открыть сохранённый список, перетащите сюда его .txt.',
+      chooseFiles: 'Выбрать файлы',
+      sample: 'Попробовать на тестовых звуках',
+      hint: 'Щёлкните, чтобы выбрать. <kbd>Ctrl</kbd>/<kbd>⌘</kbd> или <kbd>Shift</kbd>-щелчок выбирает несколько. Перетаскивайте строки, чтобы изменить порядок. <kbd>Alt</kbd>+<kbd>↑</kbd>/<kbd>↓</kbd> перемещает выбранное, <kbd>Delete</kbd> удаляет, <kbd>Пробел</kbd> — прослушать.',
+      build: 'Собрать',
+      fileName: 'Имя файла', format: 'Формат',
+      'fmt.mp3-64': 'MP3 · 64 кбит/с (как в десктоп-версии)',
+      'fmt.mp3-128': 'MP3 · 128 кбит/с',
+      'fmt.mp3-192': 'MP3 · 192 кбит/с',
+      'fmt.wav': 'WAV · 16 бит, без сжатия',
+      sumLength: 'Длина результата', sumTracks: 'Треки', sumSize: 'Примерный размер',
+      progress: 'Ход сборки',
+      download: 'Скачать',
+      linkedFolders: 'Подключённые папки',
+      dropOverlay: 'Отпустите аудиофайлы, папки или сохранённый список',
+      preview: 'Прослушать', stopPreview: 'Остановить прослушивание', stop: 'Стоп',
+      themeLight: 'Включить светлую тему', themeDark: 'Включить тёмную тему',
+      decimal: ',', unitB: 'Б', unitKB: 'КБ', unitMB: 'МБ', unitGB: 'ГБ',
+      'dir.desktop': 'Рабочий стол', 'dir.documents': 'Документы', 'dir.downloads': 'Загрузки',
+      'dir.music': 'Музыка', 'dir.pictures': 'Изображения', 'dir.videos': 'Видео',
+
+      backupOff: 'Этот браузер не хранит резервную копию (хранилище заблокировано или заполнено). Используйте «Сохранить список», чтобы сохранить копию списка.',
+      backupListOnly: 'Список сохранён в этом браузере, но для аудио не хватило места. После перезагрузки добавьте папку снова, чтобы восстановить файлы.',
+      restoreText: ({ c, size, noAudio }) => `Ваш последний список (${c} ${ru(c, 'трек', 'трека', 'треков')}${size ? ', ' + size : ''}) сохранён в этом браузере`
+        + (noAudio ? `; для ${noAudio} из них нужно будет снова добавить папку` : '') + '. Восстановить его? Добавление новых файлов отбросит его.',
+      rootsLabel: ({ n }) => n === 1 ? 'Подключённая папка:' : 'Подключённые папки:',
+      unlink: 'Отключить',
+      unlinkTitle: ({ path }) => `Больше не читать аудио из ${path}`,
+      loadedTracks: ({ n, still }) => `Загружено треков: ${n}${still ? `; всё ещё отсутствует: ${still}` : ''}.`,
+      noneFoundIn: ({ where }) => `Ни один из недостающих треков не найден в ${where}.`,
+      linkedFound: ({ path, n, still }) => `Подключена папка ${path}: найдено недостающих треков: ${n}${still ? `; всё ещё отсутствует: ${still}` : ''}.`,
+      notOnDrive: 'Там не нашлось ни одного из недостающих треков. Выберите папку, в которой они лежат, а не весь диск.',
+      cantReadFolder: ({ name }) => `Не удалось прочитать папку «${name}».`,
+      noneInFolder: ({ name }) => `Ни один из недостающих треков не найден в «${name}».`,
+      pathAsk: ({ name }) => `Где на этом компьютере находится папка «${name}»? В сохранённых списках у каждого трека указан полный путь, поэтому вставьте путь к папке один раз. В Проводнике выберите папку и нажмите Ctrl+Shift+C, чтобы скопировать путь.`,
+      pathNoFolder: ({ k }) => `${k} ${ru(k, 'трек добавлен', 'трека добавлено', 'треков добавлено')} без ${k === 1 ? 'его папки' : 'их папок'}, поэтому сохранённый список не сможет найти ${k === 1 ? 'его' : 'их'} снова. Выберите папку, в которой ${k === 1 ? 'он лежит' : 'они лежат'}, или папку выше.`,
+      linkedRoot: ({ p }) => `Подключена папка ${p}. Списки с треками из неё теперь загружаются автоматически.`,
+      pathNotAbs: ({ name }) => `Вставьте полный путь к папке, начиная с диска, например C:\\…\\${name}.`,
+      pathWrongName: ({ base, name }) => `Этот путь заканчивается на «${base}», а папка называется «${name}».`,
+      pathLinked: ({ p, n }) => `Подключена папка ${p}.` + (n ? ` Полный путь появился у треков: ${n}.` : ''),
+      noneInDir: ({ k, name }) => `Среди треков без полного пути (${k}) ни одного нет в «${name}».`,
+      relNoPath: ({ k, fix }) => `У ${k} ${ru(k, 'трека', 'треков', 'треков')} в списке нет полного пути, поэтому список не может загрузить ${k === 1 ? 'его' : 'их'} автоматически.`
+        + (fix ? ` Подключите папку, в которой ${k === 1 ? 'он лежит' : 'они лежат'}, чтобы это исправить.` : ''),
+      relNoLink: ({ k }) => `Этот браузер не сообщает страницам, где лежат файлы, поэтому ${k} ${ru(k, 'трек указан', 'трека указано', 'треков указано')} только по папке и имени файла. Chrome и Edge умеют сохранять полные пути.`,
+
+      missAllow: ({ k, n, where, nFolders }) => `${k} ${ru(k, 'трек ещё не загружен', 'трека ещё не загружено', 'треков ещё не загружено')}. ` + (n === k
+        ? `Разрешите странице снова читать ${where}, чтобы загрузить ${k === 1 ? 'его' : 'их'}.`
+        : `${n} из них ${ruOne(n) ? 'находится' : 'находятся'} в ${where}; разрешите странице снова читать ${nFolders === 1 ? 'эту папку' : 'эти папки'}, чтобы загрузить ${n === 1 ? 'его' : 'их'}.`),
+      missRequest: ({ k, n, where, folder, known, depth, more }) => `${k} ${ru(k, 'трек ещё не загружен', 'трека ещё не загружено', 'треков ещё не загружено')}. `
+        + `${n === k ? (k === 1 ? 'Он находится' : 'Они находятся') : `${n} из них ${ruOne(n) ? 'находится' : 'находятся'}`} в ${where}. `
+        + (known && !depth ? `Чтобы страница могла прочитать ${n === 1 ? 'его' : 'их'}, разрешите доступ к ${folder ? folder : 'этой папке'}: окно выбора папки откроется прямо в ней, так что просто нажмите «Выбор папки».`
+          : `Чтобы страница могла прочитать ${n === 1 ? 'его' : 'их'}, выберите ${folder ? folder : 'эту папку'} в окне выбора папки${known ? `, которое откроется в вашей папке «${DICT.ru['dir.' + known]}»` : ''}.`)
+        + (more ? ` После этого — ещё ${more} ${ru(more, 'папка', 'папки', 'папок')}.` : ''),
+      missChoose: ({ k, dir }) => `У ${k} ${ru(k, 'трека', 'треков', 'треков')} пока нет аудиофайла на этом компьютере. `
+        + `Выберите папку, в которой ${k === 1 ? 'он лежит' : 'они лежат'}${dir ? ` (${dir})` : ''}, или папку выше. Всё, чего нет в списке, будет пропущено.`,
+      missAdd: ({ k }) => `У ${k} ${ru(k, 'трека', 'треков', 'треков')} пока нет аудиофайла на этом компьютере. `
+        + `Перетащите или добавьте папку, в которой ${k === 1 ? 'он лежит' : 'они лежат'}; подойдёт и родительская папка. Файлы сопоставляются по имени и папке, всё, чего нет в списке, пропускается.`,
+      chooseNamed: ({ name }) => `Выбрать «${name}»…`,
+      allowAccess: 'Разрешить доступ',
+      longPath: ({ k, dir }) => `Путь у ${k} ${ru(k, 'трека', 'треков', 'треков')} — 260 символов или длиннее, браузер не может открыть такие файлы из списка или папки. `
+        + `Откройте ${dir || (k === 1 ? 'его папку' : 'их папки')} в Проводнике и перетащите ${k === 1 ? 'файл' : 'файлы'} на эту страницу.`,
+      unsure: ({ n, name }) => `${n} ${ru(n, 'файл пришёл', 'файла пришло', 'файлов пришло')} под коротким именем (${name}), которое подходит нескольким трекам из списка. `
+        + (n === 1 ? 'Перетащите его на строку нужного трека.' : 'Перетащите каждый на строку своего трека.'),
+      unreadable: ({ n }) => `${n} ${ru(n, 'файл не удалось открыть', 'файла не удалось открыть', 'файлов не удалось открыть')}: ${n === 1 ? 'путь к нему' : 'пути к ним'} — 260 символов или длиннее. Перетащите ${n === 1 ? 'его' : 'их'} на эту страницу из Проводника.`,
+
+      noAudioAdded: 'В добавленном не найдено аудиофайлов.',
+      strays: ({ n }) => `Пропущено файлов, которые не являются аудио (MP3, WAV, OGG, FLAC, M4A, AAC) или списком (.txt): ${n}.`,
+      onlyOneList: ({ name }) => `Одновременно можно загрузить только один список, поэтому использован ${name}.`,
+      foundMissing: ({ n, still }) => `Найдено недостающих треков: ${n}${still ? `; всё ещё отсутствует: ${still}` : ''}.`,
+      sharesName: ({ n }) => `У ${n} ${ru(n, 'трека', 'треков', 'треков')} имя файла совпадает с другими треками в списке. Добавьте папку, в которой лежат эти треки, чтобы их можно было различить.`,
+      leftOut: ({ n }) => `Не добавлено файлов, которых нет в списке: ${n}.`,
+      noneMatch: 'Ни один из этих файлов не подходит к недостающим трекам.',
+      dupes: ({ n }) => `Уже есть в списке: ${n} ${ru(n, 'файл', 'файла', 'файлов')}.`,
+      cantReadFile: ({ name }) => `Не удалось прочитать ${name}.`,
+      listNoAudio: ({ name }) => `В ${name} нет ни одного аудиофайла. В списке должен быть один путь к файлу в строке.`,
+      loadedAll: ({ name, n }) => `Загружен ${name}: найдены все треки (${n}).`,
+      loadedSome: ({ name, found, n }) => `Загружен ${name}: найдено треков: ${found} из ${n}.`,
+      readFromRoot: ({ k, path, name }) => `Прочитано треков из ${path}: ${k}; в списке ${k === 1 ? 'он указан' : 'они указаны'} в другой папке с именем «${name}».`,
+      sharesName2: ({ n }) => `У ${n} ${ru(n, 'трека', 'треков', 'треков')} имя файла совпадает с другими треками, поэтому, чтобы их различить, нужна их папка.`,
+      leftOutAudio: ({ n }) => `Не добавлено аудиофайлов, которых нет в списке: ${n}.`,
+      skippedLines: ({ n }) => `Пропущено строк, не являющихся путём к аудиофайлу: ${n}.`,
+      loadedOne: ({ name, still }) => `Загружен ${name}${still ? `; всё ещё отсутствует: ${still}` : ''}.`,
+      cantPreview: ({ name }) => `«${name}» нельзя прослушать в этом браузере.`,
+      savedList: ({ note }) => `Сохранён backup.txt. ${note}`,
+      noMp3: 'Кодировщик MP3 не загрузился (нет подключения к интернету?), поэтому доступен только WAV.',
+
+      clearConfirm: ({ n }) => n === 1 ? 'Убрать трек из списка?' : `Убрать из списка все ${n} ${ru(n, 'трек', 'трека', 'треков')}?`,
+      role: { start: 'Начало', mix: 'Микс', end: 'Конец' },
+      missing: 'Нет файла',
+      missingTipLong: 'Аудиофайла пока нет. Перетащите его на эту строку из Проводника.',
+      missingTip: 'Аудиофайла пока нет. Добавьте папку, в которой он лежит.',
+      readingLength: 'Определяется длина',
+      lengthAfterBuild: 'Длина станет известна после сборки',
+
+      lgStart: 'играет первым, один', lgMix: 'средние треки, все сразу', lgEnd: 'играет последним, один',
+      moreNeeded: ({ m }) => `Нужно ещё ${m} ${ru(m, 'трек', 'трека', 'треков')}`,
+      addThree: 'Добавьте 3 трека или больше',
+      mixedCount: ({ k }) => `В миксе: ${k}`,
+      longest: ({ time }) => `самый длинный ${time}`,
+      output: 'Итого',
+      tracksMissing: 'не хватает треков',
+      measuring: 'измерение…',
+      afterBuild: 'станет известна после сборки',
+      sumTracksFew: ({ n }) => `${n} из 3 нужных`,
+      sumTracksMissing: ({ n, missing }) => `${n}, отсутствует: ${missing}`,
+      sumTracksOk: ({ n }) => `1 + ${n - 2} в миксе + 1`,
+      statusFew: 'Добавьте минимум 3 трека для сборки.',
+      statusMissing: ({ missing }) => `Добавьте аудио для недостающих треков (${missing}), чтобы начать сборку.`,
+      statusReady: 'Готово к сборке.',
+      count: ({ n, k }) => `${n} ${ru(n, 'трек', 'трека', 'треков')}` + (k > 1 ? ` · выбрано: ${k}` : ''),
+
+      errFew: 'Добавьте минимум 3 трека: начальный, один или несколько для микса и конечный.',
+      errNoFile: ({ name }) => `У «${name}» пока нет аудиофайла. Добавьте папку с недостающими треками или уберите их из списка.`,
+      errNoEncoder: 'Кодировщик MP3 не загрузился, возможно, нет подключения к интернету. Перезагрузите страницу при наличии интернета или выберите WAV.',
+      errNoDecode: 'Этот браузер не умеет декодировать аудио. Попробуйте актуальную версию Chrome, Edge, Firefox или Safari.',
+      errRead: ({ name }) => `Не удалось прочитать «${name}». Файл может быть повреждён, или браузер не умеет декодировать его формат. Уберите его из списка или пересохраните как MP3 или WAV.`,
+      errMemory: 'Браузеру не хватило памяти для такого объёма аудио. Выберите MP3 · 64 кбит/с — он занимает примерно вдвое меньше памяти — или соберите файл из меньшего числа или более коротких треков.',
+      errOther: ({ msg }) => `При сборке что-то пошло не так: ${msg}`,
+      mixing: ({ i, n, name }) => `Микширование ${i} из ${n}: ${name}`,
+      readStart: ({ name }) => `Чтение начального трека: ${name}`,
+      readEnd: ({ name }) => `Чтение конечного трека: ${name}`,
+      encoding: ({ kbps }) => `Кодирование MP3, ${kbps} кбит/с`,
+      writingWav: 'Запись WAV',
+      built: ({ time, s }) => `Готово: ${time} аудио за ${s} с.`,
+      cancelled: 'Сборка отменена.',
+      stopped: 'Сборка остановлена.',
+      cancelling: 'Отмена…',
+      dlZip: ({ base }) => `Скачать ${base}.zip`,
+      dlFile: ({ name }) => `Скачать ${name}`,
+      zipNote: ({ base, ext }) => `В архиве лежат ${base}${ext} и ${base}.txt — список треков. Этот просмотрщик не может сохранять аудиофайлы напрямую.`,
+      fileNote: ({ base }) => `Дополнительно сохраняется ${base}.txt с полным путём каждого трека. Позже перетащите его сюда, чтобы снова загрузить эту сборку и отредактировать её.`,
+      savedFile: ({ name }) => `Сохранено: ${name}.`,
+      dlDeclined: 'Скачивание отменено.',
+      dlBusy: 'Окно сохранения уже открыто.',
+      dlTooLarge: 'Файл слишком велик, чтобы этот просмотрщик мог его сохранить. Откройте страницу по её собственному адресу, чтобы скачать файл.',
+      dlFailed: 'Этот просмотрщик не может сохранять файлы. Откройте страницу по её собственному адресу, чтобы скачать файл.',
+    },
+  };
+
+  const KEY = 'interapp.lang';
+  const listeners = [];
+  let lang = 'en';
+  try {
+    const saved = localStorage.getItem(KEY);
+    if (saved === 'en' || saved === 'ru') lang = saved;
+    else if (/^ru\b/i.test(navigator.language || '')) lang = 'ru';
+  } catch { /* falls back to the browser language */ }
+
+  function t(key, p) {
+    const v = DICT[lang][key] !== undefined ? DICT[lang][key] : DICT.en[key];
+    if (v === undefined) return key;
+    return typeof v === 'function' ? v(p === undefined ? {} : p) : v;
+  }
+
+  // Fills the static markup from its data-i18n* attributes.
+  function apply() {
+    const root = document.documentElement;
+    root.lang = lang;
+    document.title = t('title');
+    const meta = document.querySelector('meta[name="description"]');
+    if (meta) meta.content = t('metaDesc');
+    document.querySelectorAll('[data-i18n]').forEach(e => { e.textContent = t(e.dataset.i18n); });
+    document.querySelectorAll('[data-i18n-html]').forEach(e => { e.innerHTML = t(e.dataset.i18nHtml); });
+    document.querySelectorAll('[data-i18n-title]').forEach(e => { e.title = t(e.dataset.i18nTitle); });
+    document.querySelectorAll('[data-i18n-aria]').forEach(e => { e.setAttribute('aria-label', t(e.dataset.i18nAria)); });
+    document.querySelectorAll('[data-lang]').forEach(b => { b.setAttribute('aria-pressed', String(b.dataset.lang === lang)); });
+  }
+
+  function setLang(next) {
+    if (next === lang || !DICT[next]) return;
+    lang = next;
+    try { localStorage.setItem(KEY, lang); } catch { /* per-viewer convenience only */ }
+    apply();
+    listeners.forEach(fn => fn());
+  }
+
+  document.querySelectorAll('[data-lang]').forEach(b => { b.onclick = () => setLang(b.dataset.lang); });
+  apply();
+
+  return { t, setLang, get lang() { return lang; }, onChange: fn => listeners.push(fn) };
+})();
+</script>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/lamejs/1.2.1/lame.min.js"></script>
 <script>
@@ -430,6 +841,20 @@ const el = {};
  'backupNote','rootsBox','dropOverlay','themeBtn',
  'app','gate','gatePick','gateBtn','gateForm','gateInput','gateChooseBtn','gateErr'].forEach(id => { el[id] = $(id); });
 
+// ---------------------------------------------------------------- language
+// Text that can outlive a language switch (notices, errors, status lines) is set with setText: it
+// keeps the source, a string or a function that returns one (or a list of them, joined by spaces),
+// and is worked out again when the language changes.
+const tr = i18n.t;
+const q = s => tr('q', s);
+const resolveText = s => typeof s === 'function' ? s() : Array.isArray(s) ? s.map(resolveText).join(' ') : s;
+const texts = new Set();
+function setText(node, src) {
+  node._src = src;
+  texts.add(node);
+  node.textContent = resolveText(src);
+}
+
 // ---------------------------------------------------------------- state
 // listPath is the path a saved list writes: the full path when it's known. handle and top are the
 // file's handle and the folder it was dropped or picked in, where the browser gives them.
@@ -461,10 +886,11 @@ function fmtTime(sec) {
   return h ? `${h}:${String(m).padStart(2, '0')}:${ss}` : `${m}:${ss}`;
 }
 function fmtSize(b) {
-  if (b < 1024) return b + ' B';
-  if (b < 1048576) return Math.round(b / 1024) + ' KB';
-  if (b < 1073741824) return (b / 1048576).toFixed(1) + ' MB';
-  return (b / 1073741824).toFixed(2) + ' GB';
+  const dec = s => s.replace('.', tr('decimal'));
+  if (b < 1024) return b + ' ' + tr('unitB');
+  if (b < 1048576) return Math.round(b / 1024) + ' ' + tr('unitKB');
+  if (b < 1073741824) return dec((b / 1048576).toFixed(1)) + ' ' + tr('unitMB');
+  return dec((b / 1073741824).toFixed(2)) + ' ' + tr('unitGB');
 }
 function storageGet(k) { try { return localStorage.getItem(k); } catch { return null; } }
 function storageSet(k, v) { try { localStorage.setItem(k, v); } catch { /* per-viewer convenience only */ } }
@@ -539,17 +965,20 @@ const store = (() => {
 })();
 let storeChain = Promise.resolve();
 let backupState = 'ok';
+function renderBackupNote() {
+  el.backupNote.textContent = backupState === 'off' ? tr('backupOff') : backupState === 'list-only' ? tr('backupListOnly') : '';
+}
 function enqueueStore(fn) {
   storeChain = storeChain.then(fn).catch(() => {
     if (backupState === 'off') return;
     backupState = 'off';
-    el.backupNote.textContent = "This browser isn't keeping a backup (storage is blocked or full). Use Save list to keep a copy of the list.";
+    renderBackupNote();
   });
 }
 function audioBackupFailed() {
   if (backupState !== 'ok') return;
   backupState = 'list-only';
-  el.backupNote.textContent = "The list is backed up in this browser, but there wasn't room for the audio. After a reload, add the folder again to fill it in.";
+  renderBackupNote();
 }
 // Ask once for storage the browser won't clear on its own when the disk gets full.
 let persistAsked = false;
@@ -583,8 +1012,7 @@ function renderRestore() {
   const total = recs.reduce((a, r) => a + (r.file ? r.size || 0 : 0), 0);
   // Audio missing from the backup can still come from a linked folder.
   const noAudio = recs.filter(r => !r.file && !rootsFor(r.listPath || r.path).length).length;
-  el.restoreText.textContent = `Your last list (${recs.length} ${plural(recs.length, 'track', 'tracks')}${total ? ', ' + fmtSize(total) : ''}) is saved in this browser`
-    + (noAudio ? `; ${noAudio} of them will need their folder added again` : '') + '. Restore it? Adding new files discards it.';
+  setText(el.restoreText, () => tr('restoreText', { c: recs.length, size: total ? fmtSize(total) : '', noAudio }));
   el.restoreBar.hidden = false;
 }
 function dropPendingRestore() {
@@ -879,8 +1307,8 @@ async function allowAccess() {
   const locked = accessNeeded();
   const n = await loadFromRoots(true);
   const still = tracks.filter(t => !t.file).length;
-  if (n) showNotice(`Loaded ${n} ${plural(n, 'track', 'tracks')}${still ? `; ${still} still missing` : ''}.`);
-  else if (locked.some(r => r.state === 'granted')) showNotice(`None of the missing tracks were found in ${locked.map(r => r.path).join(', ')}.`);
+  if (n) showNotice(() => tr('loadedTracks', { n, still }));
+  else if (locked.some(r => r.state === 'granted')) showNotice(() => tr('noneFoundIn', { where: locked.map(r => r.path).join(', ') }));
   requestIfActive();
 }
 
@@ -976,16 +1404,16 @@ async function linkForMissing(dir) {
     const n = await loadFromRoots(false);
     if (n) {
       const still = tracks.filter(t => !t.file).length;
-      showNotice(`Linked ${path}: found ${n} missing ${plural(n, 'track', 'tracks')}${still ? `; ${still} still missing` : ''}.`);
+      showNotice(() => tr('linkedFound', { path, n, still }));
       return;
     }
   }
   // The folder's name isn't in the missing paths (a list from another computer, or a renamed
   // folder), so its files are matched by name and enclosing folders instead; not a whole drive's.
-  if (/^([A-Za-z]:)?[\\/]*$/.test(dir.name)) { showNotice("None of the missing tracks were found there. Choose the folder that holds them rather than a whole drive."); return; }
+  if (/^([A-Za-z]:)?[\\/]*$/.test(dir.name)) { showNotice(() => tr('notOnDrive')); return; }
   const out = [];
-  try { await walkHandle(dir, '', false, null, out); } catch { showNotice(`Couldn't read the folder “${dir.name}”.`); return; }
-  if (!out.length) { showNotice(unreadableNote(out.unreadable) || `None of the missing tracks were found in “${dir.name}”.`); return; }
+  try { await walkHandle(dir, '', false, null, out); } catch { showNotice(() => tr('cantReadFolder', { name: dir.name })); return; }
+  if (!out.length) { showNotice(() => unreadableNote(out.unreadable) || tr('noneInFolder', { name: dir.name })); return; }
   handleIncoming(out);
 }
 
@@ -1007,15 +1435,13 @@ function renderPathBar() {
     el.pathErr.hidden = true;
     if (dir) el.pathInput.placeholder = `C:\\…\\${dir.name}`;
   }
-  el.pathText.textContent = dir
-    ? `Where is the folder “${dir.name}” on this computer? Saved lists hold each track's full path, so paste the folder's path once. In File Explorer, select the folder and press Ctrl+Shift+C to copy it.`
-    : `${k} ${plural(k, 'track was', 'tracks were')} added without ${plural(k, 'its', 'their')} folder, so a saved list can't find ${plural(k, 'it', 'them')} again. Choose the folder ${plural(k, 'it is', 'they are')} in, or a folder above it.`;
+  el.pathText.textContent = dir ? tr('pathAsk', { name: dir.name }) : tr('pathNoFolder', { k });
 }
 
 function renderRoots() {
   el.rootsBox.hidden = !roots.length;
   const label = document.createElement('li');
-  label.textContent = roots.length === 1 ? 'Linked folder:' : 'Linked folders:';
+  label.textContent = tr('rootsLabel', { n: roots.length });
   el.rootsBox.replaceChildren(label, ...roots.map(r => {
     const li = document.createElement('li');
     const code = document.createElement('code');
@@ -1023,8 +1449,8 @@ function renderRoots() {
     const b = document.createElement('button');
     b.type = 'button';
     b.className = 'link-btn';
-    b.textContent = 'Unlink';
-    b.title = `Stop reading audio from ${r.path}`;
+    b.textContent = tr('unlink');
+    b.title = tr('unlinkTitle', { path: r.path });
     b.onclick = () => unlinkRoot(r);
     li.append(code, b);
     return li;
@@ -1065,7 +1491,7 @@ async function linkRoot(p, dir) {
   await addRoot(p, dir);
   renderRestore();
   await loadFromRoots(false);   // renders, which takes the gate away
-  showNotice(`Linked ${p}. Lists with tracks inside it now load by themselves.`);
+  showNotice(() => tr('linkedRoot', { p }));
 }
 // A list saved on another computer points into that computer's copy of the audio folder. Such a
 // path is read from the linked folder of the same name instead: everything before the first folder
@@ -1088,28 +1514,25 @@ function rebase(line, moved) {
   return line;
 }
 // What's wrong with a full path typed for a folder, if anything.
-const pathProblem = (p, dir) => !isAbs(p) ? `Paste the folder's full path, starting with the drive, like C:\\…\\${dir.name}.`
-  : normPart(baseName(p)) !== normPart(dir.name) ? `That path ends in “${baseName(p)}”, but the folder is “${dir.name}”.` : '';
+const pathProblem = (p, dir) => !isAbs(p) ? () => tr('pathNotAbs', { name: dir.name })
+  : normPart(baseName(p)) !== normPart(dir.name) ? () => tr('pathWrongName', { base: baseName(p), name: dir.name }) : null;
 
 // Lines without a full path can only be found again by adding their folder with the list.
 function relativeNote(list) {
-  const k = list.filter(t => !isAbs(shownPath(t))).length;
+  const k = list.filter(x => !isAbs(shownPath(x))).length;
   if (!k) return '';
-  return canLink()
-    ? `${k} ${plural(k, 'track has', 'tracks have')} no full path in the list, so it can't load ${plural(k, 'it', 'them')} by itself.`
-      + (unresolved().length ? ` Link the folder ${plural(k, 'it is', 'they are')} in to fix that.` : '')
-    : `This browser doesn't tell pages where files are, so ${k} ${plural(k, 'track is', 'tracks are')} listed by folder and file name only. Chrome and Edge can save full paths.`;
+  return canLink() ? tr('relNoPath', { k, fix: unresolved().length > 0 }) : tr('relNoLink', { k });
 }
 
 // ---------------------------------------------------------------- adding tracks
+// text: a string, a function that returns one, or a list of those.
 function showNotice(text, action) {
-  el.noticeText.textContent = text || '';
-  el.notice.hidden = !text;
+  setText(el.noticeText, text || '');
+  el.notice.hidden = !(Array.isArray(text) ? text.length : text);
   el.noticeAction.hidden = !action;
-  el.noticeAction.textContent = action ? action.label : '';
+  setText(el.noticeAction, action ? action.label : '');
   el.noticeAction.onclick = action ? () => { showNotice(''); action.fn(); } : null;
 }
-const plural = (n, one, many) => n === 1 ? one : many;
 // A track is named after its full path when there is one: a file that came in under its short
 // name (see tooLong) still shows its real name.
 const makeTrack = (file, path, listPath, from) => ({
@@ -1123,20 +1546,20 @@ async function handleIncoming(items) {
   if (building) return;
   clearError();
   resetStatus();
-  const bad = unreadableNote(items.unreadable);
-  if (!items.length) { showNotice(bad || 'No audio files were found in what you added.'); return; }
+  const unreadable = items.unreadable;
+  if (!items.length) { showNotice(() => unreadableNote(unreadable) || tr('noAudioAdded')); return; }
   const lists = items.filter(it => !it.inFolder && extOf(it.file.name) === 'txt');
   const audio = items.filter(it => AUDIO_EXT.has(extOf(it.file.name)));
   const strays = items.filter(it => !it.inFolder && !lists.includes(it) && !audio.includes(it)).length;
-  const notes = [];
-  if (strays) notes.push(`Skipped ${strays} ${plural(strays, "file that isn't", "files that aren't")} audio (MP3, WAV, OGG, FLAC, M4A, AAC) or a list (.txt).`);
-  if (bad) notes.push(bad);
+  const notes = [];   // functions, so the notice follows a language switch
+  if (strays) notes.push(() => tr('strays', { n: strays }));
+  if (unreadable) notes.push(() => unreadableNote(unreadable));
   if (lists.length) {
-    if (lists.length > 1) notes.push(`Only one list can be loaded at a time, so ${lists[0].file.name} was used.`);
+    if (lists.length > 1) notes.push(() => tr('onlyOneList', { name: lists[0].file.name }));
     await importList(lists[0].file, audio, notes);
     return;
   }
-  if (!audio.length) { showNotice(notes.join(' ') || 'No audio files were found in what you added.'); return; }
+  if (!audio.length) { showNotice(notes.length ? notes : () => tr('noAudioAdded')); return; }
   await locate(audio, tracks.filter(t => !t.file).map(shownPath));
   if (building) return;
   dropPendingRestore();
@@ -1149,13 +1572,13 @@ async function handleIncoming(items) {
     const loose = leftovers.filter(it => !it.inFolder && !missingNames.has(normPart(it.file.name)) && !unsure.includes(it));
     const ignored = leftovers.filter(it => it.inFolder).length;
     const still = tracks.filter(t => !t.file).length;
-    if (filled) notes.push(`Found ${filled} missing ${plural(filled, 'track', 'tracks')}${still ? `; ${still} still missing` : ''}.`);
-    if (ambiguous) notes.push(`${ambiguous} ${plural(ambiguous, 'track shares its', 'tracks share their')} file name with other tracks in the list. Add the folder that holds ${plural(ambiguous, 'it', 'them')} so they can be told apart.`);
-    if (unsure.length) notes.push(unsureNote(unsure));
-    if (ignored) notes.push(`Left out ${ignored} ${plural(ignored, "file that isn't", "files that aren't")} in the list.`);
+    if (filled) notes.push(() => tr('foundMissing', { n: filled, still }));
+    if (ambiguous) notes.push(() => tr('sharesName', { n: ambiguous }));
+    if (unsure.length) notes.push(() => unsureNote(unsure));
+    if (ignored) notes.push(() => tr('leftOut', { n: ignored }));
     if (loose.length) { addAudio(loose, notes); return; }
-    if (!filled && !ignored && !ambiguous) notes.push('None of these files match a missing track.');
-    showNotice(notes.join(' '));
+    if (!filled && !ignored && !ambiguous) notes.push(() => tr('noneMatch'));
+    showNotice(notes);
     changed();
     return;
   }
@@ -1173,8 +1596,8 @@ function addAudio(items, notes) {
     have.add(key);
     fresh.push(makeTrack(it.file, it.path, it.fullPath, it));
   }
-  if (dupes) notes.push(`${dupes} ${plural(dupes, 'file was', 'files were')} already in the list.`);
-  showNotice(notes.join(' '));
+  if (dupes) notes.push(() => tr('dupes', { n: dupes }));
+  showNotice(notes);
   if (!fresh.length) { changed(); return; }
   const prev = tracks;
   tracks = [...tracks, ...fresh];
@@ -1199,7 +1622,7 @@ async function readText(file) {
 // Loading a list replaces the current one, like "Load files from txt" in the desktop app.
 async function importList(file, audio, notes) {
   let text;
-  try { text = await readText(file); } catch { showNotice(`Couldn't read ${file.name}.`); return; }
+  try { text = await readText(file); } catch { showNotice(() => tr('cantReadFile', { name: file.name })); return; }
   await rootsReady;
   const seen = new Set(), lines = [], moved = new Map();
   let nonAudio = 0;
@@ -1214,8 +1637,8 @@ async function importList(file, audio, notes) {
     lines.push(line);
   }
   if (!lines.length) {
-    notes.unshift(`${file.name} doesn't list any audio files. A list has one file path per line.`);
-    showNotice(notes.join(' '));
+    notes.unshift(() => tr('listNoAudio', { name: file.name }));
+    showNotice(notes);
     return;
   }
   if (building) return;
@@ -1269,13 +1692,13 @@ async function importList(file, audio, notes) {
   }
   const ignored = audio.length - inList.size - short.pairs.size - short.unsure.length;
   notes.unshift(found === next.length
-    ? `Loaded ${file.name}: all ${next.length} tracks found.`
-    : `Loaded ${file.name}: found ${found} of ${next.length} tracks.`);
-  for (const [r, k] of moved) notes.push(`Read ${k} ${plural(k, 'track', 'tracks')} from ${r.path}; the list has ${plural(k, 'it', 'them')} in another folder named “${baseName(r.path)}”.`);
-  if (ambiguous) notes.push(`${ambiguous} ${plural(ambiguous, 'track shares its', 'tracks share their')} file name with other tracks, so ${plural(ambiguous, 'it needs its', 'they need their')} folder to be told apart.`);
-  if (short.unsure.length) notes.push(unsureNote(short.unsure));
-  if (ignored) notes.push(`Left out ${ignored} audio ${plural(ignored, "file that isn't", "files that aren't")} in the list.`);
-  if (nonAudio) notes.push(`Skipped ${nonAudio} ${plural(nonAudio, "line that isn't", "lines that aren't")} an audio file path.`);
+    ? () => tr('loadedAll', { name: file.name, n: next.length })
+    : () => tr('loadedSome', { name: file.name, found, n: next.length }));
+  for (const [r, k] of moved) notes.push(() => tr('readFromRoot', { k, path: r.path, name: baseName(r.path) }));
+  if (ambiguous) notes.push(() => tr('sharesName2', { n: ambiguous }));
+  if (short.unsure.length) notes.push(() => unsureNote(short.unsure));
+  if (ignored) notes.push(() => tr('leftOutAudio', { n: ignored }));
+  if (nonAudio) notes.push(() => tr('skippedLines', { n: nonAudio }));
   const prev = tracks;
   stopPreview();
   tracks = next;
@@ -1286,7 +1709,7 @@ async function importList(file, audio, notes) {
   next.forEach(t => { if (t.file && dur(t) == null) queueProbe(t); });
   invalidateResult();
   render();
-  showNotice(notes.join(' '), prev.length ? { label: 'Undo', fn: () => replaceTracks(prev) } : null);
+  showNotice(notes, prev.length ? { label: () => tr('undo'), fn: () => replaceTracks(prev) } : null);
   el.list.scrollTop = 0;
   requestIfActive();
 }
@@ -1353,7 +1776,7 @@ async function dropOnTrack(t, items) {
   dropPendingRestore();
   savedFilled([fillTrack(t, audio[0])]);
   const still = tracks.filter(x => !x.file).length;
-  showNotice(`Loaded ${t.name}${still ? `; ${still} ${plural(still, 'track', 'tracks')} still missing` : ''}.`);
+  showNotice(() => tr('loadedOne', { name: t.name, still }));
   changed();
 }
 
@@ -1439,7 +1862,7 @@ async function addFolder() {
   if (dir === undefined) { (el.addFolderBtn.hidden ? el.fileInput : el.folderInput).click(); return; }
   if (!dir) return;
   const out = [];
-  try { await walkHandle(dir, '', false, null, out); } catch { showNotice(`Couldn't read the folder “${dir.name}”.`); return; }
+  try { await walkHandle(dir, '', false, null, out); } catch { showNotice(() => tr('cantReadFolder', { name: dir.name })); return; }
   handleIncoming(out);
 }
 
@@ -1588,7 +2011,7 @@ function togglePreview(id) {
   updateRow(id);
   previewAudio.play().catch(() => {
     stopPreview();
-    showNotice(`"${t.name}" can't be previewed in this browser.`);
+    showNotice(() => tr('cantPreview', { name: t.name }));
   });
 }
 
@@ -1622,39 +2045,30 @@ function renderMissing() {
   }
   const locked = accessNeeded();
   const targets = locked.length || !canLink() ? [] : folderTargets();
-  const them = plural(k, 'it', 'them');
-  let mode = 'add';
+  let mode = 'add', text;
   if (locked.length) {
     mode = 'allow';
-    const where = locked.map(r => `“${baseName(r.path)}”`).join(', ');
-    const n = rest.filter(t => rootsFor(shownPath(t)).some(r => locked.includes(r))).length;
-    el.missingText.textContent = `${k} ${plural(k, "track isn't", "tracks aren't")} loaded yet. ` + (n === k
-      ? `Allow this page to read ${where} again to load ${them}.`
-      : `${n} of them ${plural(n, 'is', 'are')} in ${where}; allow this page to read ${plural(locked.length, 'that folder', 'those folders')} again to load ${plural(n, 'it', 'them')}.`);
+    const where = locked.map(r => q(baseName(r.path))).join(', ');
+    const n = rest.filter(x => rootsFor(shownPath(x)).some(r => locked.includes(r))).length;
+    text = tr('missAllow', { k, n, where, nFolders: locked.length });
   } else if (targets.length) {
     mode = 'request';
     const g = targets[0], n = g.tracks.length, s = startFor(g.path);
     const where = commonDir(g.tracks.map(shownPath)) || g.path;
-    const folder = pathParts(where).join('/') === pathParts(g.path).join('/') ? 'that folder' : g.path;
-    const known = s && typeof s.startIn === 'string' ? s.startIn[0].toUpperCase() + s.startIn.slice(1) : '';
-    el.missingText.textContent = `${k} ${plural(k, "track isn't", "tracks aren't")} loaded yet. `
-      + `${n === k ? plural(k, "It's", "They're") : `${n} of them ${plural(n, 'is', 'are')}`} in ${where}. `
-      + (known && !s.depth ? `To let this page read ${plural(n, 'it', 'them')}, allow ${folder}: the folder picker opens right in it, so just press Select Folder.`
-        : `To let this page read ${plural(n, 'it', 'them')}, choose ${folder} in the folder picker${known ? `, which opens in your ${known} folder` : ''}.`)
-      + (targets.length > 1 ? ` After that, ${targets.length - 1} more ${plural(targets.length - 1, 'folder', 'folders')}.` : '');
+    const folder = pathParts(where).join('/') === pathParts(g.path).join('/') ? '' : g.path;
+    const known = s && typeof s.startIn === 'string' ? s.startIn : '';
+    text = tr('missRequest', { k, n, where, folder, known, depth: s && s.depth, more: targets.length - 1 });
   } else if (canLink()) {
     mode = 'choose';
-    const dir = commonDir(rest.map(shownPath));
-    el.missingText.textContent = `${k} ${plural(k, 'track has', 'tracks have')} no audio file on this computer yet. `
-      + `Choose the folder that holds ${them}${dir ? ` (${dir})` : ''}, or a folder above it. Anything in it that isn't in the list is left out.`;
+    text = tr('missChoose', { k, dir: commonDir(rest.map(shownPath)) });
   } else {
-    el.missingText.textContent = `${k} ${plural(k, 'track has', 'tracks have')} no audio file on this computer yet. `
-      + `Drop or add the folder that holds ${them}; a parent folder works too. Files are matched by name and folder, and anything not in the list is left out.`;
+    text = tr('missAdd', { k });
   }
-  if (long.length) el.missingText.textContent += ' ' + longPathNote(long);
+  if (long.length) text += ' ' + longPathNote(long);
+  el.missingText.textContent = text;
   el.missingAddBtn.dataset.mode = mode;
-  el.missingAddBtn.textContent = mode === 'request' ? `Choose “${targets[0].name}”…`
-    : { allow: 'Allow access', choose: 'Choose folder…', add: 'Add folder' }[mode];
+  el.missingAddBtn.textContent = mode === 'request' ? tr('chooseNamed', { name: targets[0].name })
+    : { allow: tr('allowAccess'), choose: tr('chooseFolder'), add: tr('addFolder') }[mode];
 }
 // ---------------------------------------------------------------- long paths (Windows)
 // Chrome and Edge can't open a file whose full path is 260 characters or more, even with long paths
@@ -1695,16 +2109,13 @@ function matchShortNames(items, paths) {
   return { pairs, unsure };
 }
 function longPathNote(list) {
-  const k = list.length, dir = commonDir(list.map(shownPath));
-  return `${k} ${plural(k, "track's path is", "tracks' paths are")} 260 characters or longer, too long for this browser to open from a list or a folder. `
-    + `Open ${dir || plural(k, 'its folder', 'their folders')} in File Explorer and drag ${plural(k, 'the file', 'the files')} onto this page.`;
+  return tr('longPath', { k: list.length, dir: commonDir(list.map(shownPath)) });
 }
-const unsureNote = items => `${items.length} ${plural(items.length, 'file', 'files')} came in under a short name (${items[0].file.name}) that more than one track in the list could have. Drag ${plural(items.length, 'it', 'each one')} onto ${plural(items.length, 'its', 'its own')} track's row.`;
+const unsureNote = items => tr('unsure', { n: items.length, name: items[0].file.name });
 // For files a folder listed but the browser couldn't open.
-const unreadableNote = n => n ? `${n} ${plural(n, 'file', 'files')} couldn't be opened because ${plural(n, 'its path is', 'their paths are')} 260 characters or longer. Drag ${plural(n, 'it', 'them')} onto this page from File Explorer instead.` : '';
+const unreadableNote = n => n ? tr('unreadable', { n }) : '';
 
 function roleOf(i, n) { return i === 0 ? 'start' : i === n - 1 ? 'end' : 'mix'; }
-const ROLE_LABEL = { start: 'Start', mix: 'Mixed', end: 'End' };
 
 function renderList() {
   const n = tracks.length;
@@ -1717,9 +2128,8 @@ function renderList() {
     li.setAttribute('role', 'option');
     li.innerHTML = '<span class="idx"></span><span class="role"></span><span class="name"><span class="fname"></span><span class="fpath"></span></span><span class="dur"></span><span class="size"></span>'
       + '<button type="button" class="mini play" tabindex="-1"></button>'
-      + `<button type="button" class="mini del" tabindex="-1" aria-label="Remove" title="Remove">${ICON_DEL}</button>`;
+      + `<button type="button" class="mini del" tabindex="-1">${ICON_DEL}</button>`;
     li.querySelector('.idx').textContent = i + 1;
-    li.querySelector('.role').textContent = ROLE_LABEL[roleOf(i, n)];
     li.querySelector('.fname').textContent = t.name;
     const folder = splitPath(shownPath(t)).slice(-3, -1).join(' / ');
     li.querySelector('.fpath').textContent = folder;
@@ -1743,12 +2153,16 @@ function paintRow(li, t, i, n) {
   li.setAttribute('aria-selected', selected.has(t.id) ? 'true' : 'false');
   li.draggable = !building;
   const d = dur(t);
-  li.querySelector('.dur').textContent = !t.file ? 'Missing' : d != null ? fmtTime(d) : (t.duration === undefined ? '…' : '–:––');
-  li.querySelector('.dur').title = !t.file ? (tooLong(shownPath(t)) ? 'No audio file yet. Drag its file onto this row from File Explorer.' : 'No audio file yet. Add the folder that holds it.') : d != null ? '' : (t.duration === undefined ? 'Reading length' : 'Length is known after the build');
+  li.querySelector('.role').textContent = tr('role')[role];
+  li.querySelector('.dur').textContent = !t.file ? tr('missing') : d != null ? fmtTime(d) : (t.duration === undefined ? '…' : '–:––');
+  li.querySelector('.dur').title = !t.file ? tr(tooLong(shownPath(t)) ? 'missingTipLong' : 'missingTip') : d != null ? '' : tr(t.duration === undefined ? 'readingLength' : 'lengthAfterBuild');
   const play = li.querySelector('.play');
   play.innerHTML = t.id === playingId ? ICON_STOP : ICON_PLAY;
-  play.setAttribute('aria-label', t.id === playingId ? 'Stop preview' : 'Preview');
-  play.title = t.id === playingId ? 'Stop' : 'Preview';
+  play.setAttribute('aria-label', t.id === playingId ? tr('stopPreview') : tr('preview'));
+  play.title = t.id === playingId ? tr('stop') : tr('preview');
+  const del = li.querySelector('.del');
+  del.title = tr('remove');
+  del.setAttribute('aria-label', tr('remove'));
 }
 function updateRow(id) {
   const li = rowEl(id);
@@ -1808,18 +2222,18 @@ function renderArrangement() {
 
   const lg = [];
   if (schematic) {
-    lg.push(legendItem('key-start', 'Start', 'plays first, alone', 'schematic'));
-    lg.push(legendItem('key-mix', 'Mixed', 'the middle tracks, all at once', 'schematic'));
-    lg.push(legendItem('key-end', 'End', 'plays last, alone', 'schematic'));
-    lg.push(legendItem('', n ? `${3 - n} more track${3 - n > 1 ? 's' : ''} needed` : 'Add 3 or more tracks', '', 'total'));
+    lg.push(legendItem('key-start', tr('start'), tr('lgStart'), 'schematic'));
+    lg.push(legendItem('key-mix', tr('mixed'), tr('lgMix'), 'schematic'));
+    lg.push(legendItem('key-end', tr('end'), tr('lgEnd'), 'schematic'));
+    lg.push(legendItem('', n ? tr('moreNeeded', { m: 3 - n }) : tr('addThree'), '', 'total'));
   } else {
     const k = n - 2;
-    lg.push(legendItem('key-start', 'Start', fmtTime(s)));
-    lg.push(legendItem('key-mix', `${k} mixed`, maxMid ? `longest ${fmtTime(maxMid)}` : ''));
-    lg.push(legendItem('key-end', 'End', fmtTime(e)));
+    lg.push(legendItem('key-start', tr('start'), fmtTime(s)));
+    lg.push(legendItem('key-mix', tr('mixedCount', { k }), maxMid ? tr('longest', { time: fmtTime(maxMid) }) : ''));
+    lg.push(legendItem('key-end', tr('end'), fmtTime(e)));
     const total = outputSeconds();
     const missing = tracks.some(t => !t.file);
-    lg.push(legendItem('', 'Output', total != null ? fmtTime(total) : missing ? 'tracks missing' : 'measuring…', 'total'));
+    lg.push(legendItem('', tr('output'), total != null ? fmtTime(total) : missing ? tr('tracksMissing') : tr('measuring'), 'total'));
   }
   el.legend.replaceChildren(...lg);
   requestAnimationFrame(fitLabels);
@@ -1842,14 +2256,13 @@ function renderSummary() {
   const pending = tracks.some(t => t.file && t.duration === undefined);
   const missing = tracks.filter(t => !t.file).length;
   el.extLabel.textContent = f.ext;
-  el.sumLength.textContent = n < 3 ? '—' : total != null ? fmtTime(total) : missing ? '—' : pending ? 'measuring…' : 'known after build';
-  el.sumTracks.textContent = n < 3 ? `${n} of 3 needed` : missing ? `${n}, ${missing} missing` : `1 + ${n - 2} mixed + 1`;
+  el.sumLength.textContent = n < 3 ? '—' : total != null ? fmtTime(total) : missing ? '—' : pending ? tr('measuring') : tr('afterBuild');
+  el.sumTracks.textContent = n < 3 ? tr('sumTracksFew', { n }) : missing ? tr('sumTracksMissing', { n, missing }) : tr('sumTracksOk', { n });
   el.sumSize.textContent = total != null ? '≈ ' + fmtSize(estimateBytes(f, total)) : '—';
   if (!building) {
     el.buildBtn.disabled = n < 3 || missing > 0;
     if (!result && !el.status.dataset.sticky) {
-      el.status.textContent = n < 3 ? 'Add at least 3 tracks to build.'
-        : missing ? `Add the audio for ${missing} missing ${plural(missing, 'track', 'tracks')} to build.` : 'Ready to build.';
+      setText(el.status, () => tr(n < 3 ? 'statusFew' : missing ? 'statusMissing' : 'statusReady', { missing }));
     }
   }
 }
@@ -1868,7 +2281,7 @@ function renderToolbar() {
   el.loadListBtn.disabled = lock;
   el.addFilesBtn.disabled = el.addFolderBtn.disabled = el.emptyAddBtn.disabled = el.sampleBtn.disabled = lock;
   el.outName.disabled = el.format.disabled = lock;
-  el.countLabel.textContent = `${n} track${n === 1 ? '' : 's'}` + (k > 1 ? ` · ${k} selected` : '');
+  el.countLabel.textContent = tr('count', { n, k });
 }
 
 // ---------------------------------------------------------------- list interaction
@@ -2040,7 +2453,7 @@ el.saveListBtn.onclick = async () => {
   await downloadsCap;
   if (dlCap) await saveViaCapability('backup.txt', text);
   else saveViaLink(new Blob([text], { type: 'text/plain;charset=utf-8' }), 'backup.txt');
-  if (note) showNotice(`Saved backup.txt. ${note}`);
+  if (note) showNotice(() => tr('savedList', { note: relativeNote(tracks) }));
 };
 el.pathPickBtn.onclick = async () => {
   const dir = await pick('showDirectoryPicker', {});
@@ -2048,7 +2461,7 @@ el.pathPickBtn.onclick = async () => {
   const list = unresolved();
   let inside = 0;
   for (const t of list) if (await dir.resolve(t.handle).catch(() => null)) inside++;
-  if (!inside) { showNotice(`None of the ${list.length} ${plural(list.length, 'track', 'tracks')} without a full path ${plural(list.length, 'is', 'are')} in “${dir.name}”.`); return; }
+  if (!inside) { showNotice(() => tr('noneInDir', { k: list.length, name: dir.name })); return; }
   const p = await pathOfHandle(dir);
   if (p) { await addRoot(p, dir); return; }
   askDir = dir;
@@ -2060,12 +2473,12 @@ el.pathForm.onsubmit = async e => {
   const dir = pathDir;
   if (!dir) return;
   const p = cleanPath(el.pathInput.value), bad = pathProblem(p, dir);
-  el.pathErr.textContent = bad;
+  setText(el.pathErr, bad || '');
   el.pathErr.hidden = !bad;
   if (bad) return;
   askDir = null;
   const n = await addRoot(p, dir);
-  showNotice(`Linked ${p}.` + (n ? ` ${n} ${plural(n, 'track now has its', 'tracks now have their')} full path.` : ''));
+  showNotice(() => tr('pathLinked', { p, n }));
   render();
 };
 el.gateBtn.onclick = el.gateChooseBtn.onclick = pickRoot;
@@ -2074,7 +2487,7 @@ el.gateForm.onsubmit = async e => {
   const dir = gateDir;
   if (!dir) return;
   const p = cleanPath(el.gateInput.value), bad = pathProblem(p, dir);
-  el.gateErr.textContent = bad;
+  setText(el.gateErr, bad || '');
   el.gateErr.hidden = !bad;
   if (!bad) await linkRoot(p, dir);
 };
@@ -2089,7 +2502,7 @@ el.topBtn.onclick = () => moveSelectedToEdge(true);
 el.bottomBtn.onclick = () => moveSelectedToEdge(false);
 el.removeBtn.onclick = () => removeIds([...selected]);
 el.clearBtn.onclick = () => {
-  el.clearText.textContent = `Remove all ${tracks.length} track${tracks.length === 1 ? '' : 's'} from the list?`;
+  setText(el.clearText, () => tr('clearConfirm', { n: tracks.length }));
   el.clearBar.hidden = false;
   el.clearNo.focus();
 };
@@ -2145,7 +2558,8 @@ function makeSamples() {
 }
 
 // ---------------------------------------------------------------- build
-class BuildError extends Error { constructor(msg, id) { super(msg); this.trackId = id; } }
+// src is a string or a function returning one, so the message can follow a language switch.
+class BuildError extends Error { constructor(src, id) { super(resolveText(src)); this.src = src; this.trackId = id; } }
 class Cancelled extends Error {}
 
 function clearError() {
@@ -2153,7 +2567,7 @@ function clearError() {
   if (errorId) { const id = errorId; errorId = null; updateRow(id); }
 }
 function showError(msg, id) {
-  el.error.textContent = msg;
+  setText(el.error, msg);
   el.error.hidden = false;
   if (id) { errorId = id; updateRow(id); rowEl(id)?.scrollIntoView({ block: 'nearest' }); }
 }
@@ -2161,15 +2575,16 @@ function setProgress(frac, text) {
   const pct = Math.max(0, Math.min(1, frac)) * 100;
   el.bar.style.width = pct.toFixed(1) + '%';
   el.progress.setAttribute('aria-valuenow', String(Math.round(pct)));
-  if (text != null) el.status.textContent = text;
+  if (text != null) setText(el.status, text);
 }
 // A MessageChannel hop lets the page repaint without the 1 s timer throttling of background tabs.
 const yieldToUI = () => new Promise(r => { const c = new MessageChannel(); c.port1.onmessage = () => r(); c.port2.postMessage(0); });
 const checkCancel = () => { if (cancelRequested) throw new Cancelled(); };
 
+const paintBuildBtn = () => { el.buildBtn.textContent = building ? tr('cancel') : tr('build'); };
 function lock(on) {
   building = on;
-  el.buildBtn.textContent = on ? 'Cancel' : 'Build';
+  paintBuildBtn();
   el.buildBtn.classList.toggle('is-cancel', on);
   el.buildBtn.classList.toggle('primary', !on);
   el.tracksPanel.classList.toggle('is-locked', on);
@@ -2180,7 +2595,7 @@ function lock(on) {
 
 function makeDecoder(rate) {
   const Ctx = window.OfflineAudioContext || window.webkitOfflineAudioContext;
-  if (!Ctx) throw new BuildError("This browser can't decode audio. Try a current version of Chrome, Edge, Firefox or Safari.");
+  if (!Ctx) throw new BuildError(() => tr('errNoDecode'));
   let ctx;
   try { ctx = new Ctx(1, 1, rate); } catch { ctx = new Ctx(1, 1, 44100); }
   return {
@@ -2195,15 +2610,15 @@ function makeDecoder(rate) {
 async function build() {
   const list = tracks.slice();
   const n = list.length;
-  if (n < 3) { showError('Add at least 3 tracks: a start track, one or more tracks to mix, and an end track.'); return; }
+  if (n < 3) { showError(() => tr('errFew')); return; }
   const firstMissing = list.find(t => !t.file);
   if (firstMissing) {
-    showError(`"${firstMissing.name}" has no audio file yet. Add the folder that holds the missing tracks, or remove them from the list.`, firstMissing.id);
+    showError(() => tr('errNoFile', { name: firstMissing.name }), firstMissing.id);
     return;
   }
   const f = currentFormat();
   if (f.kind === 'mp3' && typeof lamejs === 'undefined') {
-    showError("The MP3 encoder didn't load, probably because the page is offline. Reload with an internet connection, or choose WAV.");
+    showError(() => tr('errNoEncoder'));
     return;
   }
   stopPreview();
@@ -2228,7 +2643,7 @@ async function build() {
         buf = await dec.decode(await t.file.arrayBuffer());
       } catch (err) {
         if (err instanceof RangeError) throw err;
-        throw new BuildError(`Couldn't read "${t.name}". The file may be damaged, or this browser can't decode its format. Remove it from the list, or re-save it as MP3 or WAV.`, t.id);
+        throw new BuildError(() => tr('errRead', { name: t.name }), t.id);
       }
       t.duration = buf.duration;
       decoded++;
@@ -2243,7 +2658,7 @@ async function build() {
     let mix = [new Float32Array(cap)];
     let mixLen = 0;
     for (let i = 0; i < mids.length; i++) {
-      const buf = await read(mids[i], `Mixing ${i + 1} of ${mids.length}: ${mids[i].name}`);
+      const buf = await read(mids[i], () => tr('mixing', { i: i + 1, n: mids.length, name: mids[i].name }));
       const len = buf.length;
       if (len > cap) {
         cap = Math.max(len, Math.ceil(cap * 1.25));
@@ -2259,8 +2674,8 @@ async function build() {
     }
 
     // 2. Start and end tracks play on their own.
-    const first = await read(list[0], `Reading start track: ${list[0].name}`);
-    const last = await read(list[n - 1], `Reading end track: ${list[n - 1].name}`);
+    const first = await read(list[0], () => tr('readStart', { name: list[0].name }));
+    const last = await read(list[n - 1], () => tr('readEnd', { name: list[n - 1].name }));
     const chans = b => b.numberOfChannels > 1 ? [b.getChannelData(0), b.getChannelData(1)] : [b.getChannelData(0)];
     const outCh = Math.min(2, Math.max(mix.length, first.numberOfChannels, last.numberOfChannels));
     const segs = [
@@ -2279,7 +2694,7 @@ async function build() {
     const CHUNK = 1152 * 40;
     const L = new Int16Array(CHUNK), R = new Int16Array(CHUNK);
     let done = 0, lastYield = performance.now();
-    const label = f.kind === 'mp3' ? `Encoding MP3 at ${f.kbps} kbps` : 'Writing WAV';
+    const label = () => f.kind === 'mp3' ? tr('encoding', { kbps: f.kbps }) : tr('writingWav');
     for (const s of segs) {
       const a = s.data[0], b = s.data[Math.min(1, s.data.length - 1)];
       for (let off = 0; off < s.len; off += CHUNK) {
@@ -2301,7 +2716,7 @@ async function build() {
         }
         done += m;
         if (performance.now() - lastYield > 40) {
-          setProgress(0.35 + 0.65 * done / totalFrames, `${label}… ${Math.floor(100 * done / totalFrames)}%`);
+          setProgress(0.35 + 0.65 * done / totalFrames, () => `${label()}… ${Math.floor(100 * done / totalFrames)}%`);
           await yieldToUI();
           checkCancel();
           lastYield = performance.now();
@@ -2316,7 +2731,7 @@ async function build() {
       blob, url: URL.createObjectURL(blob), ext: f.ext, seconds, list,
       took: (performance.now() - t0) / 1000,
     };
-    setProgress(1, `Built ${fmtTime(seconds)} of audio in ${Math.max(1, Math.round(result.took))} s.`);
+    setProgress(1, () => tr('built', { time: fmtTime(seconds), s: Math.max(1, Math.round(result.took)) }));
     el.status.dataset.sticky = '1';
     renderResult();
     chime();
@@ -2324,16 +2739,16 @@ async function build() {
     setProgress(0);
     el.status.dataset.sticky = '1';
     if (err instanceof Cancelled) {
-      el.status.textContent = 'Build cancelled.';
+      setText(el.status, () => tr('cancelled'));
     } else if (err instanceof BuildError) {
-      el.status.textContent = 'Build stopped.';
-      showError(err.message, err.trackId);
+      setText(el.status, () => tr('stopped'));
+      showError(err.src, err.trackId);
     } else if (err instanceof RangeError || (err && /memory|allocation/i.test(String(err.message)))) {
-      el.status.textContent = 'Build stopped.';
-      showError('The browser ran out of memory for this much audio. Choose MP3 · 64 kbps, which uses about half the memory, or build from fewer or shorter tracks.');
+      setText(el.status, () => tr('stopped'));
+      showError(() => tr('errMemory'));
     } else {
-      el.status.textContent = 'Build stopped.';
-      showError('Something went wrong while building: ' + (err && err.message ? err.message : String(err)));
+      setText(el.status, () => tr('stopped'));
+      showError(() => tr('errOther', { msg: err && err.message ? err.message : String(err) }));
     }
   } finally {
     lock(false);
@@ -2342,7 +2757,7 @@ async function build() {
 }
 
 el.buildBtn.onclick = () => {
-  if (building) { cancelRequested = true; el.status.textContent = 'Cancelling…'; return; }
+  if (building) { cancelRequested = true; setText(el.status, () => tr('cancelling')); return; }
   build();
 };
 
@@ -2391,12 +2806,12 @@ function renderResult() {
   el.resultMeta.textContent = `${base}${result.ext} · ${fmtTime(result.seconds)} · ${fmtSize(result.blob.size)}`;
   const rel = relativeNote(result.list);
   if (dlCap) {
-    el.downloadBtn.textContent = `Download ${base}.zip`;
-    el.dlNote.textContent = `The zip holds ${base}${result.ext} and ${base}.txt, the track list. This viewer can't save audio files directly.` + (rel ? ' ' + rel : '');
+    el.downloadBtn.textContent = tr('dlZip', { base });
+    el.dlNote.textContent = tr('zipNote', { base, ext: result.ext }) + (rel ? ' ' + rel : '');
   } else {
     // Like the desktop app, a build comes with the list of its tracks' full paths.
-    el.downloadBtn.textContent = `Download ${base}${result.ext}`;
-    el.dlNote.textContent = `Also saves ${base}.txt with each track's full path. Drop it here later to load this build again and edit it.` + (rel ? ' ' + rel : '');
+    el.downloadBtn.textContent = tr('dlFile', { name: base + result.ext });
+    el.dlNote.textContent = tr('fileNote', { base }) + (rel ? ' ' + rel : '');
   }
   el.dlNote.hidden = false;
 }
@@ -2412,13 +2827,13 @@ function saveViaLink(blob, filename) {
 async function saveViaCapability(filename, data) {
   try {
     await dlCap.save({ filename, data });
-    el.status.textContent = `Saved ${filename}.`;
+    setText(el.status, () => tr('savedFile', { name: filename }));
   } catch (err) {
     const code = err && err.code;
-    el.status.textContent = code === 'declined' ? 'Download cancelled.'
-      : code === 'rate_limited' ? 'A save prompt is already open.'
-      : code === 'too_large' ? 'The file is too large for this viewer to save. Open the page from its own address to download it.'
-      : "This viewer can't save files. Open the page from its own address to download it.";
+    setText(el.status, () => tr(code === 'declined' ? 'dlDeclined'
+      : code === 'rate_limited' ? 'dlBusy'
+      : code === 'too_large' ? 'dlTooLarge'
+      : 'dlFailed'));
   }
 }
 
@@ -2491,7 +2906,7 @@ const isDark = () => {
 function paintThemeBtn() {
   const dark = isDark();
   el.themeBtn.innerHTML = dark ? ICON_SUN : ICON_MOON;
-  const label = dark ? 'Switch to light mode' : 'Switch to dark mode';
+  const label = tr(dark ? 'themeLight' : 'themeDark');
   el.themeBtn.title = label;
   el.themeBtn.setAttribute('aria-label', label);
 }
@@ -2512,9 +2927,22 @@ if (savedName) el.outName.value = savedName;
 if (typeof lamejs === 'undefined') {
   [...el.format.options].forEach(o => { if (o.value.startsWith('mp3')) o.disabled = true; });
   el.format.value = 'wav';
-  showNotice("The MP3 encoder couldn't load (no internet connection?), so only WAV is available.");
+  showNotice(() => tr('noMp3'));
 }
 render();
+
+// Switching language: the static markup is redone by i18n; everything drawn by this script is
+// drawn again, and text set with setText is worked out again.
+i18n.onChange(() => {
+  paintBuildBtn();
+  paintThemeBtn();
+  render();
+  renderRoots();
+  renderBackupNote();
+  if (pendingRestore) renderRestore();
+  if (result) renderResult();
+  for (const node of texts) node.textContent = resolveText(node._src);
+});
 
 try {
   store.load().then(async recs => {
